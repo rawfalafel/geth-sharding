@@ -41,8 +41,8 @@ type Proposer struct {
 // NewProposer creates a struct instance of a proposer service.
 // It will have access to a mainchain client, a p2p network,
 // and a shard transaction pool.
-func NewProposer(config *params.Config, client *mainchain.SMCClient, p2p *p2p.Server, txpool *txpool.TXPool, dbService *database.ShardDB, shardID int, sync *syncer.Syncer) (*Proposer, error) {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewProposer(ctx context.Context, config *params.Config, client *mainchain.SMCClient, p2p *p2p.Server, txpool *txpool.TXPool, dbService *database.ShardDB, shardID int, sync *syncer.Syncer) (*Proposer, error) {
+	ctx, cancel := context.WithCancel(ctx)
 	return &Proposer{
 		config,
 		client,
@@ -66,11 +66,11 @@ func (p *Proposer) Start() {
 	p.msgChan = make(chan p2p.Message, 20)
 	feed := p.p2p.Feed(pb.Transaction{})
 	p.txpoolSub = feed.Subscribe(p.msgChan)
-	go p.proposeCollations()
+	go p.proposeCollations(p.ctx.Done())
 }
 
 // Stop the main loop for proposing collations.
-func (p *Proposer) Stop() error {
+func (p *Proposer) stop() error {
 	log.Warnf("Stopping proposer service in shard %d", p.shard.ShardID())
 	defer p.cancel()
 	defer close(p.msgChan)
@@ -79,7 +79,7 @@ func (p *Proposer) Stop() error {
 }
 
 // proposeCollations listens to the transaction feed and submits collations over an interval.
-func (p *Proposer) proposeCollations() {
+func (p *Proposer) proposeCollations(done <-chan struct{}) {
 	feed := p.p2p.Feed(pb.Transaction{})
 	ch := make(chan p2p.Message, 20)
 	sub := feed.Subscribe(ch)
@@ -97,7 +97,8 @@ func (p *Proposer) proposeCollations() {
 			if err := p.createCollation(p.ctx, []*gethTypes.Transaction{legacyutil.TransformTransaction(tx)}); err != nil {
 				log.Errorf("Create collation failed: %v", err)
 			}
-		case <-p.ctx.Done():
+		case <-done:
+			p.stop()
 			log.Debug("Proposer context closed, exiting goroutine")
 			return
 		case <-p.txpoolSub.Err():

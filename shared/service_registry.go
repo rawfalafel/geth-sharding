@@ -1,9 +1,10 @@
 package shared
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"reflect"
+	log "github.com/sirupsen/logrus"
 )
 
 // ServiceRegistry provides a useful pattern for managing services.
@@ -12,13 +13,24 @@ import (
 type ServiceRegistry struct {
 	services     map[reflect.Type]Service // map of types to services.
 	serviceTypes []reflect.Type           // keep an ordered slice of registered service types.
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 
 // NewServiceRegistry starts a registry instance for convenience
 func NewServiceRegistry() *ServiceRegistry {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &ServiceRegistry{
 		services: make(map[reflect.Type]Service),
+		ctx:      ctx,
+		cancel:   cancel,
 	}
+}
+
+// GetContext returns the root context for all services.
+// Contexts within services must be derived from this context.
+func (s *ServiceRegistry) GetContext() context.Context {
+	return s.ctx
 }
 
 // StartAll initialized each service in order of registration.
@@ -30,11 +42,8 @@ func (s *ServiceRegistry) StartAll() {
 
 // StopAll ends every service, logging a panic if any of them fail to stop.
 func (s *ServiceRegistry) StopAll() {
-	for kind, service := range s.services {
-		if err := service.Stop(); err != nil {
-			log.Panicf("Could not stop the following service: %v, %v", kind, err)
-		}
-	}
+	log.Info("StopAll")
+	s.cancel()
 }
 
 // RegisterService appends a service constructor function to the service

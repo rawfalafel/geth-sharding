@@ -1,7 +1,6 @@
 package node
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -20,18 +19,18 @@ import (
 // full PoS node. It handles the lifecycle of the entire system and registers
 // services to a service registry.
 type BeaconNode struct {
-	ctx      *cli.Context
-	services *shared.ServiceRegistry
-	lock     sync.RWMutex
-	stop     chan struct{} // Channel to wait for termination notifications.
+	cliCtx    *cli.Context
+	services  *shared.ServiceRegistry
+	lock      sync.RWMutex
+	stop      chan struct{} // Channel to wait for termination notifications.
 }
 
 // New creates a new node instance, sets up configuration options, and registers
 // every required service to the node.
-func New(ctx *cli.Context) (*BeaconNode, error) {
+func New(cliCtx *cli.Context) (*BeaconNode, error) {
 	registry := shared.NewServiceRegistry()
 	beacon := &BeaconNode{
-		ctx:      ctx,
+		cliCtx:   cliCtx,
 		services: registry,
 		stop:     make(chan struct{}),
 	}
@@ -50,7 +49,6 @@ func (b *BeaconNode) Start() {
 	log.Info("Starting beacon node")
 
 	b.services.StartAll()
-
 	stop := b.stop
 	b.lock.Unlock()
 
@@ -81,13 +79,14 @@ func (b *BeaconNode) Close() {
 	defer b.lock.Unlock()
 
 	b.services.StopAll()
+
 	log.Info("Stopping beacon node")
 	close(b.stop)
 }
 
 func (b *BeaconNode) registerWeb3Service() error {
-	endpoint := b.ctx.GlobalString(types.Web3ProviderFlag.Name)
-	web3Service, err := powchain.NewWeb3Service(context.TODO(), endpoint)
+	endpoint := b.cliCtx.GlobalString(types.Web3ProviderFlag.Name)
+	web3Service, err := powchain.NewWeb3Service(b.services.GetContext(), endpoint)
 	if err != nil {
 		return fmt.Errorf("could not register web3Service: %v", err)
 	}

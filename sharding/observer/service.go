@@ -4,7 +4,6 @@ package observer
 
 import (
 	"context"
-	"math/big"
 
 	"github.com/prysmaticlabs/geth-sharding/sharding/database"
 	"github.com/prysmaticlabs/geth-sharding/sharding/mainchain"
@@ -18,7 +17,6 @@ import (
 // in a sharded system. Must satisfy the Service interface defined in
 // sharding/service.go.
 type Observer struct {
-	p2p       *p2p.Server
 	dbService *database.ShardDB
 	shardID   int
 	shard     *types.Shard
@@ -32,21 +30,16 @@ type Observer struct {
 // it will have access to a p2p server and a shardChainDB.
 func NewObserver(p2p *p2p.Server, dbService *database.ShardDB, shardID int, sync *syncer.Syncer, client *mainchain.SMCClient) (*Observer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Observer{p2p, dbService, shardID, nil, ctx, cancel, sync, client}, nil
+	return &Observer{dbService, shardID, nil, ctx, cancel, sync, client}, nil
 }
 
 // Start the main loop for observer service.
 func (o *Observer) Start() {
 	log.Info("Starting observer service")
-	o.shard = types.NewShard(big.NewInt(int64(o.shardID)), o.dbService.DB())
-	go o.sync.HandleCollationBodyRequests(o.shard, o.ctx.Done())
 }
 
 // Stop the main loop for observer service.
 func (o *Observer) Stop() error {
-	// Triggers a cancel call in the service's context which shuts down every goroutine
-	// in this service.
-	defer o.cancel()
 	log.Info("Stopping observer service")
 	return nil
 }

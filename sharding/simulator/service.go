@@ -37,7 +37,7 @@ type Simulator struct {
 // NewSimulator creates a struct instance of a simulator service.
 // It will have access to config, a mainchain client, a p2p server,
 // and a shardID.
-func NewSimulator(config *params.Config, client *mainchain.SMCClient, p2p *p2p.Server, shardID int, delay time.Duration) (*Simulator, error) {
+func NewSimulator(ctx context.Context, config *params.Config, client *mainchain.SMCClient, p2p *p2p.Server, shardID int, delay time.Duration) (*Simulator, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Simulator{config, client, p2p, shardID, ctx, cancel, delay, nil}, nil
 }
@@ -49,15 +49,6 @@ func (s *Simulator) Start() {
 
 	go s.broadcastTransactions(time.NewTicker(s.delay).C, s.ctx.Done())
 	go s.simulateNotaryRequests(s.client.SMCCaller(), s.client.ChainReader(), time.NewTicker(s.delay).C, s.ctx.Done())
-}
-
-// Stop the main loop for simulator requests.
-func (s *Simulator) Stop() error {
-	// Triggers a cancel call in the service's context which shuts down every goroutine
-	// in this service.
-	defer s.cancel()
-	log.Info("Stopping simulator service")
-	return nil
 }
 
 // simulateNotaryRequests simulates

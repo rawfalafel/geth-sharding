@@ -64,7 +64,7 @@ func (w *Web3Service) Start() {
 }
 
 // Stop the web3 service's main event loop and associated goroutines.
-func (w *Web3Service) Stop() error {
+func (w *Web3Service) stop() error {
 	defer w.cancel()
 	defer close(w.headerChan)
 	log.Info("Stopping web3 PoW chain service")
@@ -79,6 +79,7 @@ func (w *Web3Service) latestPOWChainInfo(reader Reader, done <-chan struct{}) {
 	for {
 		select {
 		case <-done:
+			w.stop()
 			return
 		case header := <-w.headerChan:
 			w.blockNumber = header.Number

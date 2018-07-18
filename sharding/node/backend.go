@@ -46,17 +46,19 @@ type ShardEthereum struct {
 
 // New creates a new sharding-enabled Ethereum instance. This is called in the main
 // geth sharding entrypoint.
-func New(ctx *cli.Context) (*ShardEthereum, error) {
+func New(cliCtx *cli.Context) (*ShardEthereum, error) {
 	registry := shared.NewServiceRegistry()
 	shardEthereum := &ShardEthereum{
 		services: registry,
 		stop:     make(chan struct{}),
 	}
 
+	ctx := registry.GetContext()
+
 	// Configure shardConfig by loading the default.
 	shardEthereum.shardConfig = params.DefaultConfig
 
-	if err := shardEthereum.registerShardChainDB(ctx); err != nil {
+	if err := shardEthereum.registerShardChainDB(cliCtx); err != nil {
 		return nil, err
 	}
 
@@ -64,16 +66,16 @@ func New(ctx *cli.Context) (*ShardEthereum, error) {
 		return nil, err
 	}
 
-	if err := shardEthereum.registerMainchainClient(ctx); err != nil {
+	if err := shardEthereum.registerMainchainClient(cliCtx); err != nil {
 		return nil, err
 	}
 
-	actorFlag := ctx.GlobalString(utils.ActorFlag.Name)
+	actorFlag := cliCtx.GlobalString(utils.ActorFlag.Name)
 	if err := shardEthereum.registerTXPool(actorFlag); err != nil {
 		return nil, err
 	}
 
-	shardIDFlag := ctx.GlobalInt(utils.ShardIDFlag.Name)
+	shardIDFlag := cliCtx.GlobalInt(utils.ShardIDFlag.Name)
 	if err := shardEthereum.registerSyncerService(shardEthereum.shardConfig, shardIDFlag); err != nil {
 		return nil, err
 	}
@@ -216,13 +218,13 @@ func (s *ShardEthereum) registerActorService(config *params.Config, actor string
 
 	switch actor {
 	case "notary":
-		not, err := notary.NewNotary(config, client, shardp2p, shardChainDB)
+		not, err := notary.NewNotary(s.services.GetContext(), config, client, shardp2p, shardChainDB)
 		if err != nil {
 			return fmt.Errorf("could not register notary service: %v", err)
 		}
 		return s.services.RegisterService(not)
 	case "simulator":
-		sim, err := simulator.NewSimulator(config, client, shardp2p, shardID, 15*time.Second)
+		sim, err := simulator.NewSimulator(s.services.GetContext(), config, client, shardp2p, shardID, 15*time.Second)
 		if err != nil {
 			return fmt.Errorf("could not register simulator service: %v", err)
 		}
@@ -233,7 +235,7 @@ func (s *ShardEthereum) registerActorService(config *params.Config, actor string
 			return err
 		}
 
-		prop, err := proposer.NewProposer(config, client, shardp2p, pool, shardChainDB, shardID, sync)
+		prop, err := proposer.NewProposer(s.services.GetContext(), config, client, shardp2p, pool, shardChainDB, shardID, sync)
 		if err != nil {
 			return fmt.Errorf("could not register proposer service: %v", err)
 		}
