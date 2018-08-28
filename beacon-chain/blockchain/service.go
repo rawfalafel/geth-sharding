@@ -102,7 +102,7 @@ func (c *ChainService) Start() {
 	}
 	// TODO: Fetch the slot: (block, state) DAGs from persistent storage
 	// to truly continue across sessions.
-	go c.blockProcessing(c.ctx.Done())
+	go c.blockProcessing()
 }
 
 // Stop the blockchain service's main event loop and associated goroutines.
@@ -242,12 +242,12 @@ func (c *ChainService) updateHead(slot uint64) {
 	c.canonicalBlockFeed.Send(canonicalBlock)
 }
 
-func (c *ChainService) blockProcessing(done <-chan struct{}) {
+func (c *ChainService) blockProcessing() {
 	sub := c.incomingBlockFeed.Subscribe(c.incomingBlockChan)
 	defer sub.Unsubscribe()
 	for {
 		select {
-		case <-done:
+		case <-c.ctx.Done():
 			log.Debug("Chain service context closed, exiting goroutine")
 			return
 		// Listen for a newly received incoming block from the sync service.

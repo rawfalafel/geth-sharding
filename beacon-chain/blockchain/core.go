@@ -421,9 +421,17 @@ func (b *BeaconChain) calculateBlockVoteCache(attestation *pb.AttestationRecord,
 
 // getSignedParentHashes returns all the parent hashes stored in active state up to last ycle length.
 func (b *BeaconChain) getSignedParentHashes(block *types.Block, attestation *pb.AttestationRecord) []*common.Hash {
+	if len(b.ActiveState().RecentBlockHashes()) == 0 {
+		return []*common.Hash{}
+	}
+
 	var signedParentHashes []*common.Hash
 	start := block.SlotNumber() - attestation.Slot
 	end := block.SlotNumber() - attestation.Slot - uint64(len(attestation.ObliqueParentHashes)) + params.CycleLength
+	if end < uint64(len(b.ActiveState().RecentBlockHashes())) {
+		end = uint64(len(b.ActiveState().RecentBlockHashes()))
+	}
+
 	for _, hashes := range b.ActiveState().RecentBlockHashes()[start:end] {
 		signedParentHashes = append(signedParentHashes, &hashes)
 	}
