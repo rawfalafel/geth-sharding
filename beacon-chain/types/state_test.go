@@ -157,7 +157,7 @@ func TestBlockHashForSlot(t *testing.T) {
 	state := NewActiveState(&pb.ActiveState{
 		RecentBlockHashes: recentBlockHash,
 	}, nil)
-	block := newTestBlock(t, &pb.BeaconBlock{SlotNumber: 7})
+	block := NewTestBlock(t, &pb.BeaconBlock{SlotNumber: 7})
 	if _, err := state.BlockHashForSlot(200, block); err == nil {
 		t.Error("getBlockHash should have failed with invalid slot")
 	}
@@ -175,7 +175,10 @@ func TestBlockHashForSlot(t *testing.T) {
 	if bytes.Equal(hash[:], []byte{'F'}) {
 		t.Errorf("getBlockHash returns hash should be F, got: %v", hash)
 	}
-	block = newTestBlock(t, &pb.BeaconBlock{SlotNumber: 201})
+	block = NewTestBlock(t, &pb.BeaconBlock{SlotNumber: 201})
+	if err != nil {
+		t.Fatalf("failed to instantiate block: %v", err)
+	}
 	hash, err = state.BlockHashForSlot(200, block)
 	if err != nil {
 		t.Errorf("getBlockHash failed: %v", err)
@@ -188,7 +191,7 @@ func TestBlockHashForSlot(t *testing.T) {
 
 // newTestBlock is a helper method to create blocks with valid defaults.
 // For a generic block, use NewBlock(t, nil).
-func newTestBlock(t *testing.T, b *pb.BeaconBlock) *Block {
+func newTestBlock(b *pb.BeaconBlock) (*Block, error) {
 	if b == nil {
 		b = &pb.BeaconBlock{}
 	}

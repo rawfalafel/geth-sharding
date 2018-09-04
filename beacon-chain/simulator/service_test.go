@@ -133,12 +133,12 @@ func TestBlockRequest(t *testing.T) {
 		<-exitRoutine
 	}()
 
-	block := types.NewBlock(&pb.BeaconBlock{ParentHash: make([]byte, 32)})
-	h, err := block.Hash()
+	block, err := types.NewBlock(&pb.BeaconBlock{ParentHash: make([]byte, 32)})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("failed to instantiate new block: %v", err)
 	}
 
+	h := block.Hash()
 	data := &pb.BeaconBlockRequest{
 		Hash: h[:],
 	}

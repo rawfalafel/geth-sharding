@@ -195,11 +195,7 @@ func (c *ChainService) updateHead(slot uint64) {
 	}
 	log.Debugf("Received %d validators by slot", len(vals))
 
-	h, err := c.candidateBlock.Hash()
-	if err != nil {
-		log.Errorf("Unable to hash canonical block: %v", err)
-		return
-	}
+	h := c.candidateBlock.Hash()
 
 	// Save canonical slotnumber to DB.
 	if err := c.chain.saveCanonicalSlotNumber(c.candidateBlock.SlotNumber(), h); err != nil {
@@ -249,10 +245,7 @@ func (c *ChainService) blockProcessing(done <-chan struct{}) {
 			var err error
 			var blockVoteCache map[[32]byte]*types.VoteCache
 
-			h, err := block.Hash()
-			if err != nil {
-				log.Debugf("Could not hash incoming block: %v", err)
-			}
+			h := block.Hash()
 
 			receivedSlotNumber := block.SlotNumber()
 

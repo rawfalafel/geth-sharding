@@ -150,26 +150,13 @@ func TestCanonicalHead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to setup second beacon chain: %v", err)
 	}
-	// Using a faultydb that returns true on has, but nil on get should cause
-	// proto.Unmarshal to throw error.
+
 	block, err := chain.CanonicalHead()
 	if err != nil {
 		t.Fatal("expected canonical head to throw error")
 	}
-	expectedBlock := types.NewBlock(&pb.BeaconBlock{})
-	if !reflect.DeepEqual(block, expectedBlock) {
-		t.Errorf("mismatched canonical head: expected %v, received %v", expectedBlock, block)
-	}
-}
-
-func TestSaveCanonicalBlock(t *testing.T) {
-	block := types.NewBlock(&pb.BeaconBlock{})
-	chain, err := NewBeaconChain(&faultyDB{})
-	if err != nil {
-		t.Fatalf("unable to setup second beacon chain: %v", err)
-	}
-	if err := chain.saveCanonicalBlock(block); err != nil {
-		t.Errorf("save canonical should pass: %v", err)
+	if block != nil {
+		t.Fatal("expected CanonicalHead to return nothing")
 	}
 }
 
@@ -238,11 +225,8 @@ func TestCanProcessBlock(t *testing.T) {
 	parentBlock := NewBlock(t, &pb.BeaconBlock{
 		SlotNumber: 1,
 	})
-	parentHash, err := parentBlock.Hash()
-	if err != nil {
-		t.Fatalf("Failed to compute parent block's hash: %v", err)
-	}
-	if err = db.DB().Put(parentHash[:], []byte{}); err != nil {
+	parentHash := parentBlock.Hash()
+	if err := db.DB().Put(parentHash[:], []byte{}); err != nil {
 		t.Fatalf("Failed to put parent block on db: %v", err)
 	}
 
@@ -326,11 +310,8 @@ func TestCanProcessBlockObserver(t *testing.T) {
 	parentBlock := NewBlock(t, &pb.BeaconBlock{
 		SlotNumber: 1,
 	})
-	parentHash, err := parentBlock.Hash()
-	if err != nil {
-		t.Fatalf("Failed to compute parent block's hash: %v", err)
-	}
-	if err = db.DB().Put(parentHash[:], []byte{}); err != nil {
+	parentHash := parentBlock.Hash()
+	if err := db.DB().Put(parentHash[:], []byte{}); err != nil {
 		t.Fatalf("Failed to put parent block on db: %v", err)
 	}
 
@@ -378,15 +359,6 @@ func TestCanProcessBlockObserver(t *testing.T) {
 	}
 	if canProcess {
 		t.Error("Should not be able to process block with invalid timestamp condition")
-	}
-}
-
-func TestSaveBlockWithNil(t *testing.T) {
-	beaconChain, db := startInMemoryBeaconChain(t)
-	defer db.Close()
-
-	if err := beaconChain.saveBlock(&types.Block{}); err == nil {
-		t.Error("Save block should have failed with nil block")
 	}
 }
 
@@ -527,18 +499,10 @@ func TestGetBlock(t *testing.T) {
 		PowChainRef: []byte("a"),
 	})
 
-	hash, err := block.Hash()
-	if err != nil {
-		t.Errorf("unable to generate hash of block %v", err)
-	}
+	hash := block.Hash()
 
 	key := blockKey(hash)
-	marshalled, err := proto.Marshal(block.Proto())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := beaconChain.db.Put(key, marshalled); err != nil {
+	if err := beaconChain.db.Put(key, block.Marshal()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -673,7 +637,12 @@ func NewBlock(t *testing.T, b *pb.BeaconBlock) *types.Block {
 		b.ParentHash = make([]byte, 32)
 	}
 
-	return types.NewBlock(b)
+	blk, err := types.NewBlock(b)
+	if err != nil {
+		t.Fatalf("Failed to instantiate block: %v", err)
+	}
+
+	return blk
 }
 
 func TestSaveAndRemoveBlocks(t *testing.T) {
@@ -685,10 +654,7 @@ func TestSaveAndRemoveBlocks(t *testing.T) {
 		PowChainRef: []byte("a"),
 	})
 
-	hash, err := block.Hash()
-	if err != nil {
-		t.Fatalf("unable to generate hash of block %v", err)
-	}
+	hash := block.Hash()
 
 	if err := b.saveBlock(block); err != nil {
 		t.Fatalf("unable to save block %v", err)
@@ -745,11 +711,7 @@ func TestCheckBlockBySlotNumber(t *testing.T) {
 		PowChainRef: []byte("a"),
 	})
 
-	hash, err := block.Hash()
-	if err != nil {
-		t.Error(err)
-	}
-
+	hash := block.Hash()
 	if err := beaconChain.saveCanonicalSlotNumber(block.SlotNumber(), hash); err != nil {
 		t.Fatalf("unable to save canonical slot %v", err)
 	}
@@ -772,10 +734,7 @@ func TestCheckBlockBySlotNumber(t *testing.T) {
 		PowChainRef: []byte("d"),
 	})
 
-	althash, err := alternateblock.Hash()
-	if err != nil {
-		t.Fatalf("unable to hash block %v", err)
-	}
+	althash := alternateblock.Hash()
 
 	if err := beaconChain.saveCanonicalSlotNumber(block.SlotNumber(), althash); err != nil {
 		t.Fatalf("unable to save canonical slot %v", err)
@@ -800,10 +759,7 @@ func TestGetBlockBySlotNumber(t *testing.T) {
 		PowChainRef: []byte("a"),
 	})
 
-	hash, err := block.Hash()
-	if err != nil {
-		t.Error(err)
-	}
+	hash := block.Hash()
 
 	if err := beaconChain.saveCanonicalSlotNumber(block.SlotNumber(), hash); err != nil {
 		t.Fatalf("unable to save canonical slot %v", err)
@@ -827,10 +783,7 @@ func TestGetBlockBySlotNumber(t *testing.T) {
 		PowChainRef: []byte("d"),
 	})
 
-	althash, err := alternateblock.Hash()
-	if err != nil {
-		t.Fatalf("unable to hash block %v", err)
-	}
+	althash := alternateblock.Hash()
 
 	if err := beaconChain.saveCanonicalSlotNumber(block.SlotNumber(), althash); err != nil {
 		t.Fatalf("unable to save canonical slot %v", err)

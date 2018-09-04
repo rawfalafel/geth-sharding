@@ -217,22 +217,21 @@ func (s *InitialSync) run(delaychan <-chan time.Time) {
 // requestCrystallizedStateFromPeer sends a request to a peer for the corresponding crystallized state
 // for a beacon block.
 func (s *InitialSync) requestCrystallizedStateFromPeer(data *pb.BeaconBlockResponse, peer p2p.Peer) error {
-	block := types.NewBlock(data.Block)
-	h := block.CrystallizedStateHash()
+	h := data.Block.GetCrystallizedStateHash()
 	log.Debugf("Successfully processed incoming block with crystallized state hash: %x", h)
-	s.p2p.Send(&pb.CrystallizedStateRequest{Hash: h[:]}, peer)
+	s.p2p.Send(&pb.CrystallizedStateRequest{Hash: h}, peer)
 	return nil
 }
 
 // setBlockForInitialSync sets the first received block as the base finalized
 // block for initial sync.
 func (s *InitialSync) setBlockForInitialSync(data *pb.BeaconBlockResponse) error {
-	block := types.NewBlock(data.Block)
-
-	h, err := block.Hash()
+	block, err := types.NewBlock(data.Block)
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to encode block: %v", err)
 	}
+
+	h := block.Hash()
 	log.WithField("blockhash", fmt.Sprintf("%x", h)).Debug("Crystallized state hash exists locally")
 
 	if err := s.writeBlockToDB(block); err != nil {
@@ -253,7 +252,10 @@ func (s *InitialSync) requestNextBlock() {
 // validateAndSaveNextBlock will validate whether blocks received from the blockfetcher
 // routine can be added to the chain.
 func (s *InitialSync) validateAndSaveNextBlock(data *pb.BeaconBlockResponse) error {
-	block := types.NewBlock(data.Block)
+	block, err := types.NewBlock(data.Block)
+	if err != nil {
+		return fmt.Errorf("Failed to encode block: %v", err)
+	}
 
 	if s.currentSlotNumber == uint64(0) {
 		return errors.New("invalid slot number for syncing")

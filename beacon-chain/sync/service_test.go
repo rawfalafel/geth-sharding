@@ -66,7 +66,7 @@ func (ms *mockChainService) GetCanonicalBlockBySlotNumber(slotnumber uint64) (*t
 	if !ms.slotExists {
 		return nil, errors.New("invalid key")
 	}
-	return types.NewBlock(&pb.BeaconBlock{SlotNumber: slotnumber}), nil
+	return types.NewBlock(&pb.BeaconBlock{SlotNumber: slotnumber})
 }
 
 func TestProcessBlockHash(t *testing.T) {

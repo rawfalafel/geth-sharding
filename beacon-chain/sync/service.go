@@ -151,11 +151,11 @@ func (ss *Service) run() {
 				log.Errorf("Received malformed beacon block p2p message")
 				continue
 			}
-			block := types.NewBlock(response.Block)
-			h, err := block.Hash()
+			block, err := types.NewBlock(response.Block)
 			if err != nil {
-				log.Errorf("Could not hash received block: %v", err)
+				log.Errorf("Could not instantiate received block: %v", err)
 			}
+			h := block.Hash()
 			if ss.chainService.ContainsBlock(h) {
 				continue
 			}

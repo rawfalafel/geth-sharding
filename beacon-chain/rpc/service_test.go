@@ -156,7 +156,32 @@ func TestLatestBeaconBlockContextClosed(t *testing.T) {
 	testutil.AssertLogsContain(t, hook, "RPC context closed, exiting goroutine")
 }
 
-func TestLatestBeaconBlock(t *testing.T) {
+func TestLatestBeaconBlockFailure(t *testing.T) {
+	announcer := newMockAnnouncer()
+	rpcService := NewRPCService(context.Background(), &Config{Port: "7771", SubscriptionBuf: 0, Announcer: announcer})
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	exitRoutine := make(chan bool)
+
+	blk, _ := types.NewBlock(nil)
+
+	mockStream := internal.NewMockBeaconService_LatestBeaconBlockServer(ctrl)
+	mockStream.EXPECT().Send(blk.Proto()).Return(errors.New("something wrong"))
+	// Tests a faulty stream.
+	go func(tt *testing.T) {
+		if err := rpcService.LatestBeaconBlock(&empty.Empty{}, mockStream); err.Error() != "something wrong" {
+			tt.Errorf("Faulty stream should throw correct error, wanted 'something wrong', got %v", err)
+		}
+		<-exitRoutine
+	}(t)
+
+	rpcService.canonicalBlockChan <- blk
+	rpcService.cancel()
+	exitRoutine <- true
+}
+
+func TestLatestBeaconBlockSuccess(t *testing.T) {
 	hook := logTest.NewGlobal()
 	announcer := newMockAnnouncer()
 	rpcService := NewRPCService(context.Background(), &Config{Port: "7771", SubscriptionBuf: 0, Announcer: announcer})
@@ -165,20 +190,10 @@ func TestLatestBeaconBlock(t *testing.T) {
 
 	exitRoutine := make(chan bool)
 
+	blk, _ := types.NewBlock(nil)
+
 	mockStream := internal.NewMockBeaconService_LatestBeaconBlockServer(ctrl)
-	mockStream.EXPECT().Send(&pbp2p.BeaconBlock{}).Return(errors.New("something wrong"))
-	// Tests a faulty stream.
-	go func(tt *testing.T) {
-		if err := rpcService.LatestBeaconBlock(&empty.Empty{}, mockStream); err.Error() != "something wrong" {
-			tt.Errorf("Faulty stream should throw correct error, wanted 'something wrong', got %v", err)
-		}
-		<-exitRoutine
-	}(t)
-	rpcService.canonicalBlockChan <- types.NewBlock(&pbp2p.BeaconBlock{})
-
-	mockStream = internal.NewMockBeaconService_LatestBeaconBlockServer(ctrl)
-	mockStream.EXPECT().Send(&pbp2p.BeaconBlock{}).Return(nil)
-
+	mockStream.EXPECT().Send(blk.Proto()).Return(nil)
 	// Tests a good stream.
 	go func(tt *testing.T) {
 		if err := rpcService.LatestBeaconBlock(&empty.Empty{}, mockStream); err != nil {
@@ -186,10 +201,11 @@ func TestLatestBeaconBlock(t *testing.T) {
 		}
 		<-exitRoutine
 	}(t)
-	rpcService.canonicalBlockChan <- types.NewBlock(&pbp2p.BeaconBlock{})
-	testutil.AssertLogsContain(t, hook, "Sending latest canonical block to RPC clients")
+
+	rpcService.canonicalBlockChan <- blk
 	rpcService.cancel()
 	exitRoutine <- true
+	testutil.AssertLogsContain(t, hook, "Sending latest canonical block to RPC clients")
 }
 
 func TestLatestCrystallizedStateContextClosed(t *testing.T) {
@@ -211,8 +227,7 @@ func TestLatestCrystallizedStateContextClosed(t *testing.T) {
 	testutil.AssertLogsContain(t, hook, "RPC context closed, exiting goroutine")
 }
 
-func TestLatestCrystallizedState(t *testing.T) {
-	hook := logTest.NewGlobal()
+func TestLatestCrystallizedStateFailure(t *testing.T) {
 	announcer := newMockAnnouncer()
 	rpcService := NewRPCService(context.Background(), &Config{Port: "8773", SubscriptionBuf: 0, Announcer: announcer})
 	ctrl := gomock.NewController(t)
@@ -230,8 +245,20 @@ func TestLatestCrystallizedState(t *testing.T) {
 		<-exitRoutine
 	}(t)
 	rpcService.canonicalStateChan <- types.NewCrystallizedState(&pbp2p.CrystallizedState{})
+	rpcService.cancel()
+	exitRoutine <- true
+}
 
-	mockStream = internal.NewMockBeaconService_LatestCrystallizedStateServer(ctrl)
+func TestLatestCrystallizedStateSuccess(t *testing.T) {
+	hook := logTest.NewGlobal()
+	announcer := newMockAnnouncer()
+	rpcService := NewRPCService(context.Background(), &Config{Port: "8773", SubscriptionBuf: 0, Announcer: announcer})
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	exitRoutine := make(chan bool)
+
+	mockStream := internal.NewMockBeaconService_LatestCrystallizedStateServer(ctrl)
 	mockStream.EXPECT().Send(&pbp2p.CrystallizedState{}).Return(nil)
 
 	// Tests a good stream.

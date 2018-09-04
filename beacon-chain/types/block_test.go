@@ -1,59 +1,65 @@
 package types
 
 import (
-	"reflect"
 	"testing"
 
 	pb "github.com/prysmaticlabs/prysm/proto/beacon/p2p/v1"
 )
 
-func TestBlock(t *testing.T) {
-	data := &pb.BeaconBlock{
-		ParentHash:            []byte{0},
-		SlotNumber:            0,
-		RandaoReveal:          []byte{0},
-		Attestations:          []*pb.AttestationRecord{},
-		PowChainRef:           []byte{0},
-		ActiveStateHash:       []byte{0},
-		CrystallizedStateHash: []byte{0},
+func TestEqualBlockHash(t *testing.T) {
+	b1, err1 := NewGenesisBlock()
+	b2, err2 := NewGenesisBlock()
+	if err1 != nil || err2 != nil {
+		t.Fatalf("failed to instantiate block: %v, %v", err1, err2)
 	}
-	block := &Block{data}
-	block.ParentHash()
-	block.PowChainRef()
-	block.RandaoReveal()
-	block.ActiveStateHash()
-	block.CrystallizedStateHash()
-	newBlockNil := NewBlock(nil)
-	block.data.Timestamp = newBlockNil.data.Timestamp
-	if !reflect.DeepEqual(block, newBlockNil) {
-		t.Errorf("mismatched blocks: wanted %v, received %v", block, newBlockNil)
+
+	b1Hash := b1.Hash()
+	b2Hash := b2.Hash()
+	if err1 != nil || err2 != nil {
+		t.Fatalf("failed to hash: %v, %v", err1, err2)
 	}
-	data = &pb.BeaconBlock{SlotNumber: 1}
-	block = &Block{data}
-	block.data.Timestamp = newBlockNil.data.Timestamp
-	if !reflect.DeepEqual(block, NewBlock(data)) {
-		t.Errorf("mismatched blocks: wanted %v, received %v", block, NewBlock(data))
+
+	if b1Hash != b2Hash {
+		t.Fatalf("hash are not equal: %x", b1Hash)
 	}
-	emptyBlock := &Block{}
-	if _, err := emptyBlock.Marshal(); err == nil {
-		t.Error("marshal with empty data should fail")
+}
+
+func TestDifferentBlockHash(t *testing.T) {
+	b1, err1 := newTestBlock(&pb.BeaconBlock{
+		SlotNumber: 1,
+	})
+	b2, err2 := newTestBlock(&pb.BeaconBlock{
+		SlotNumber: 2,
+	})
+	if err1 != nil && err2 != nil {
+		t.Fatalf("failed to instantiate new block: %v, %v", err1, err2)
 	}
-	if _, err := emptyBlock.Hash(); err == nil {
-		t.Error("hash with empty data should fail")
+
+	if b1.Hash() == b2.Hash() {
+		t.Fatalf("hashes are equal: %x, %x", b1.Hash(), b2.Hash())
 	}
-	if _, err := block.Timestamp(); err != nil {
-		t.Errorf("well formatted timestamp should not throw an error, received %v", err)
+}
+
+// NewTestBlock is a helper method to create blocks with valid defaults.
+// For a generic block, use NewBlock(t, nil).
+func NewTestBlock(t *testing.T, b *pb.BeaconBlock) *Block {
+	if b == nil {
+		b = &pb.BeaconBlock{}
 	}
-	if _, err := block.Hash(); err != nil {
-		t.Errorf("hashing with data should not fail, received %v", err)
+	if b.ActiveStateHash == nil {
+		b.ActiveStateHash = make([]byte, 32)
 	}
-	if !reflect.DeepEqual(block.data, block.Proto()) {
-		t.Errorf("inner block data did not match proto: received %v, wanted %v", block.Proto(), block.data)
+	if b.CrystallizedStateHash == nil {
+		b.CrystallizedStateHash = make([]byte, 32)
 	}
-	if block.AttestationCount() != 0 {
-		t.Errorf("mismatched attestation count: wanted 0, received %v", block.AttestationCount())
+	if b.ParentHash == nil {
+		b.ParentHash = make([]byte, 32)
 	}
-	if _, err := NewGenesisBlock(); err != nil {
-		t.Errorf("creating genesis block should not throw error, received %v", err)
+
+	blk, err := NewBlock(b)
+	if err != nil {
+		t.Fatalf("Failed to instantiate block: %v", err)
 	}
+
+	return blk
 }

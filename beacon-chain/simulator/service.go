@@ -88,10 +88,7 @@ func (sim *Simulator) Stop() error {
 	if len(sim.broadcastedBlockHashes) > 0 {
 		lastBlockHash := sim.broadcastedBlockHashes[len(sim.broadcastedBlockHashes)-1]
 		lastBlock := sim.broadcastedBlocks[lastBlockHash]
-		encoded, err := lastBlock.Marshal()
-		if err != nil {
-			return err
-		}
+		encoded := lastBlock.Marshal()
 		return sim.beaconDB.Put([]byte("last-simulated-block"), encoded)
 	}
 	return nil
@@ -113,7 +110,7 @@ func (sim *Simulator) lastSimulatedSessionBlock() (*types.Block, error) {
 	if err = proto.Unmarshal(enc, lastSimulatedBlockProto); err != nil {
 		return nil, fmt.Errorf("Could not unmarshal simulated block from db: %v", err)
 	}
-	return types.NewBlock(lastSimulatedBlockProto), nil
+	return types.NewBlock(lastSimulatedBlockProto)
 }
 
 func (sim *Simulator) run(delayChan <-chan time.Time, done <-chan struct{}) {
@@ -128,10 +125,7 @@ func (sim *Simulator) run(delayChan <-chan time.Time, done <-chan struct{}) {
 		log.Errorf("Could not fetch last simulated session's block: %v", err)
 	}
 	if lastSimulatedBlock != nil {
-		h, err := lastSimulatedBlock.Hash()
-		if err != nil {
-			log.Errorf("Could not hash last simulated session's block: %v", err)
-		}
+		h := lastSimulatedBlock.Hash()
 		sim.slotNum = lastSimulatedBlock.SlotNumber()
 		sim.broadcastedBlockHashes = append(sim.broadcastedBlockHashes, h)
 	}
@@ -170,7 +164,7 @@ func (sim *Simulator) run(delayChan <-chan time.Time, done <-chan struct{}) {
 				powChainRef = []byte{'N', '/', 'A'}
 			}
 
-			block := types.NewBlock(&pb.BeaconBlock{
+			block, err := types.NewBlock(&pb.BeaconBlock{
 				SlotNumber:            sim.slotNum,
 				Timestamp:             ptypes.TimestampNow(),
 				PowChainRef:           powChainRef,
@@ -178,14 +172,14 @@ func (sim *Simulator) run(delayChan <-chan time.Time, done <-chan struct{}) {
 				CrystallizedStateHash: crystallizedStateHash[:],
 				ParentHash:            parentHash,
 			})
+			if err != nil {
+				log.Errorf("Could not instantiate block: %v", err)
+				continue
+			}
 
 			sim.slotNum++
 
-			h, err := block.Hash()
-			if err != nil {
-				log.Errorf("Could not hash simulated block: %v", err)
-				continue
-			}
+			h := block.Hash()
 
 			log.WithField("announcedBlockHash", fmt.Sprintf("0x%x", h)).Debug("Announcing block hash")
 			sim.p2p.Broadcast(&pb.BeaconBlockHashAnnounce{
@@ -207,11 +201,8 @@ func (sim *Simulator) run(delayChan <-chan time.Time, done <-chan struct{}) {
 			copy(h[:], data.Hash[:32])
 
 			block := sim.broadcastedBlocks[h]
-			h, err := block.Hash()
-			if err != nil {
-				log.Errorf("Could not hash block: %v", err)
-				continue
-			}
+			h = block.Hash()
+			
 			log.Debugf("Responding to full block request for hash: 0x%x", h)
 			// Sends the full block body to the requester.
 			res := &pb.BeaconBlockResponse{Block: block.Proto()}

@@ -137,11 +137,11 @@ func (s *Service) ProposeBlock(ctx context.Context, req *pb.ProposeRequest) (*pb
 		ParentHash: req.GetParentHash(),
 		Timestamp:  req.GetTimestamp(),
 	}
-	block := types.NewBlock(data)
-	h, err := block.Hash()
+	block, err := types.NewBlock(data)
 	if err != nil {
-		return nil, fmt.Errorf("could not hash block: %v", err)
+		return nil, fmt.Errorf("could not instantiate block: %v", err)
 	}
+	h := block.Hash()
 	// We relay the received block from the proposer to the chain service for processing.
 	s.chainService.IncomingBlockFeed().Send(block)
 	return &pb.ProposeResponse{BlockHash: h[:]}, nil

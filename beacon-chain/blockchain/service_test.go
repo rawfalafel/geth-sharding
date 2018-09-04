@@ -122,7 +122,7 @@ func TestStartStop(t *testing.T) {
 	chainService.chain.SetCrystallizedState(crystallized)
 
 	parentBlock := NewBlock(t, nil)
-	parentHash, _ := parentBlock.Hash()
+	parentHash := parentBlock.Hash()
 
 	block := NewBlock(t, &pb.BeaconBlock{
 		SlotNumber:            2,
@@ -242,7 +242,7 @@ func TestRunningChainService(t *testing.T) {
 		t.Fatalf("unable to get canonical head: %v", err)
 	}
 
-	parentHash, err := genesis.Hash()
+	parentHash := genesis.Hash()
 	if err != nil {
 		t.Fatalf("unable to get hash of canonical head: %v", err)
 	}
@@ -406,7 +406,7 @@ func TestProcessingBlockWithAttestations(t *testing.T) {
 	if err := chainService.SaveBlock(parentBlock); err != nil {
 		t.Fatal(err)
 	}
-	parentHash, _ := parentBlock.Hash()
+	parentHash := parentBlock.Hash()
 
 	activeStateHash, err := active.Hash()
 	if err != nil {
@@ -471,7 +471,7 @@ func TestProcessingBlocks(t *testing.T) {
 		t.Fatalf("unable to get canonical head: %v", err)
 	}
 
-	parentHash, err := genesis.Hash()
+	parentHash := genesis.Hash()
 	if err != nil {
 		t.Fatalf("unable to get hash of canonical head: %v", err)
 	}
@@ -500,7 +500,7 @@ func TestProcessingBlocks(t *testing.T) {
 
 	chainService.incomingBlockChan <- block1
 
-	block1Hash, err := block1.Hash()
+	block1Hash := block1.Hash()
 	if err != nil {
 		t.Fatalf("unable to get hash of block 1: %v", err)
 	}
@@ -516,7 +516,7 @@ func TestProcessingBlocks(t *testing.T) {
 
 	chainService.incomingBlockChan <- block2
 
-	block2Hash, err := block2.Hash()
+	block2Hash := block2.Hash()
 	if err != nil {
 		t.Fatalf("unable to get hash of block 1: %v", err)
 	}
@@ -584,10 +584,7 @@ func TestProcessAttestationBadBlock(t *testing.T) {
 		t.Fatalf("unable to get canonical head: %v", err)
 	}
 
-	parentHash, err := genesis.Hash()
-	if err != nil {
-		t.Fatalf("unable to get hash of canonical head: %v", err)
-	}
+	parentHash := genesis.Hash()
 
 	block1 := NewBlock(t, &pb.BeaconBlock{
 		ParentHash:            parentHash[:],

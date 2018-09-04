@@ -69,11 +69,7 @@ func NewBeaconChain(db ethdb.Database) (*BeaconChain, error) {
 		if err != nil {
 			return nil, err
 		}
-		genesisMarshall, err := proto.Marshal(genesisBlock.Proto())
-		if err != nil {
-			return nil, err
-		}
-		if err := beaconChain.db.Put(genesisLookupKey, genesisMarshall); err != nil {
+		if err := beaconChain.db.Put(genesisLookupKey, genesisBlock.Marshal()); err != nil {
 			return nil, err
 		}
 	}
@@ -112,23 +108,22 @@ func (b *BeaconChain) GenesisBlock() (*types.Block, error) {
 		if err := proto.Unmarshal(bytes, block); err != nil {
 			return nil, err
 		}
-		return types.NewBlock(block), nil
+		return types.NewBlock(block)
 	}
 	return types.NewGenesisBlock()
 }
 
 // CanonicalHead fetches the latest head stored in persistent storage.
 func (b *BeaconChain) CanonicalHead() (*types.Block, error) {
-
 	bytes, err := b.db.Get(canonicalHeadLookupKey)
 	if err != nil {
 		return nil, err
 	}
-	block := &pb.BeaconBlock{}
-	if err := proto.Unmarshal(bytes, block); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal proto: %v", err)
+	if len(bytes) == 0 {
+		return nil, nil
 	}
-	return types.NewBlock(block), nil
+
+	return types.NewBlockFromEncoding(bytes)
 
 }
 
@@ -489,16 +484,9 @@ func (b *BeaconChain) hasBlock(blockhash [32]byte) (bool, error) {
 
 // saveBlock puts the passed block into the beacon chain db.
 func (b *BeaconChain) saveBlock(block *types.Block) error {
-	hash, err := block.Hash()
-	if err != nil {
-		return err
-	}
+	key := blockKey(block.Hash())
+	encodedState := block.Marshal()
 
-	key := blockKey(hash)
-	encodedState, err := block.Marshal()
-	if err != nil {
-		return err
-	}
 	return b.db.Put(key, encodedState)
 }
 
@@ -518,12 +506,8 @@ func (b *BeaconChain) saveCanonicalBlock(block *types.Block) error {
 	if err := b.saveBlock(block); err != nil {
 		return err
 	}
-	enc, err := block.Marshal()
-	if err != nil {
-		return err
-	}
 
-	return b.db.Put(canonicalHeadLookupKey, enc)
+	return b.db.Put(canonicalHeadLookupKey, block.Marshal())
 }
 
 // getBlock retrieves a block from the db using its hash.
@@ -536,9 +520,10 @@ func (b *BeaconChain) getBlock(hash [32]byte) (*types.Block, error) {
 
 	block := &pb.BeaconBlock{}
 
-	err = proto.Unmarshal(enc, block)
-
-	return types.NewBlock(block), err
+	if err := proto.Unmarshal(enc, block); err != nil {
+		return nil, err
+	}
+	return types.NewBlock(block)
 }
 
 // removeBlock removes the block from the db.
