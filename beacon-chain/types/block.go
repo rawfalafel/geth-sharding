@@ -14,9 +14,9 @@ import (
 
 // Block defines a beacon chain core primitive.
 type Block struct {
-	block  *pb.BeaconBlock
-	hash   [32]byte
-	enc    []byte
+	block *pb.BeaconBlock
+	hash  [32]byte
+	enc   []byte
 }
 
 // NewBlockFromEncoding accepts the encoding pb.BeaconBlock and returns a new Block.
@@ -58,8 +58,8 @@ func NewBlock(block *pb.BeaconBlock) (*Block, error) {
 
 	return &Block{
 		block: block,
-		hash: blake2b.Sum256(enc),
-		enc: enc,
+		hash:  blake2b.Sum256(enc),
+		enc:   enc,
 	}, nil
 }
 

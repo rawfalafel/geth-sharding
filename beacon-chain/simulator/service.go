@@ -202,7 +202,7 @@ func (sim *Simulator) run(delayChan <-chan time.Time, done <-chan struct{}) {
 
 			block := sim.broadcastedBlocks[h]
 			h = block.Hash()
-			
+
 			log.Debugf("Responding to full block request for hash: 0x%x", h)
 			// Sends the full block body to the requester.
 			res := &pb.BeaconBlockResponse{Block: block.Proto()}
