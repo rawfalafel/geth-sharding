@@ -177,24 +177,6 @@ func (c *ChainService) updateHead(slot uint64) {
 		log.Errorf("Write active state to disk failed: %v", err)
 	}
 
-	if err := c.chain.SetCrystallizedState(c.candidateCrystallizedState); err != nil {
-		log.Errorf("Write crystallized state to disk failed: %v", err)
-	}
-
-	// TODO: Utilize this value in the fork choice rule.
-	vals, err := casper.ShuffleValidatorsToCommittees(
-		c.candidateCrystallizedState.DynastySeed(),
-		c.candidateCrystallizedState.Validators(),
-		c.candidateCrystallizedState.CurrentDynasty(),
-		c.candidateCrystallizedState.CrosslinkingStartShard(),
-	)
-
-	if err != nil {
-		log.Errorf("Unable to get validators by slot and by shard: %v", err)
-		return
-	}
-	log.Debugf("Received %d validators by slot", len(vals))
-
 	h, err := c.candidateBlock.Hash()
 	if err != nil {
 		log.Errorf("Unable to hash canonical block: %v", err)
@@ -217,6 +199,23 @@ func (c *ChainService) updateHead(slot uint64) {
 	// server to stream these events to beacon clients.
 	transition := c.chain.IsCycleTransition(slot)
 	if transition {
+		if err := c.chain.SetCrystallizedState(c.candidateCrystallizedState); err != nil {
+			log.Errorf("Write crystallized state to disk failed: %v", err)
+		}
+
+		// TODO: Utilize this value in the fork choice rule.
+		vals, err := casper.ShuffleValidatorsToCommittees(
+			c.candidateCrystallizedState.DynastySeed(),
+			c.candidateCrystallizedState.Validators(),
+			c.candidateCrystallizedState.CurrentDynasty(),
+			c.candidateCrystallizedState.CrosslinkingStartShard(),
+		)
+
+		if err != nil {
+			log.Errorf("Unable to get validators by height and by shard: %v", err)
+			return
+		}
+		log.Debugf("Received %d validators by height", len(vals))
 		c.canonicalCrystallizedStateFeed.Send(c.candidateCrystallizedState)
 	}
 	c.canonicalBlockFeed.Send(c.candidateBlock)
