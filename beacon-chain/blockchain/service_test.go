@@ -326,6 +326,28 @@ func TestUpdateHead(t *testing.T) {
 	chainService.candidateCrystallizedState = crystallized
 
 	chainService.updateHead(64)
+
+	parentHash = [32]byte{'b'}
+
+	crystallized.SetStateRecalc(64)
+	crystallizedStateHash, _ = crystallized.Hash()
+
+	block = NewBlock(t, &pb.BeaconBlock{
+		SlotNumber:            128,
+		ActiveStateHash:       activeStateHash[:],
+		CrystallizedStateHash: crystallizedStateHash[:],
+		ParentHash:            parentHash[:],
+		PowChainRef:           []byte("b"),
+	})
+
+	chainService.candidateBlock = block
+	chainService.candidateCrystallizedState = crystallized
+
+	chainService.updateHead(128)
+
+	if chainService.CurrentCrystallizedState() != crystallized {
+		t.Error("Crystallized state not properly changed during transition.")
+	}
 	testutil.AssertLogsContain(t, hook, "Canonical block determined")
 
 	if chainService.candidateBlock != nilBlock {
