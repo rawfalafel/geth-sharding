@@ -46,7 +46,7 @@ func DefaultConfig() Config {
 
 // ChainService is the interface for the blockchain package's ChainService struct.
 type ChainService interface {
-	HasStoredState() (bool, error)
+	HasStoredState() bool
 	SaveBlock(*types.Block) error
 }
 
@@ -98,11 +98,8 @@ func NewInitialSyncService(ctx context.Context,
 
 // Start begins the goroutine.
 func (s *InitialSync) Start() {
-	stored, err := s.chainService.HasStoredState()
-	if err != nil {
-		log.Errorf("error retrieving stored state: %v", err)
-		return
-	}
+
+	stored := s.chainService.HasStoredState()
 
 	if stored {
 		// TODO: Bail out of the sync service if the chain is only partially synced.

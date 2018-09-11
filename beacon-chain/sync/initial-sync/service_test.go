@@ -30,8 +30,8 @@ type mockChainService struct {
 	hasStoredState bool
 }
 
-func (mcs *mockChainService) HasStoredState() (bool, error) {
-	return mcs.hasStoredState, nil
+func (mcs *mockChainService) HasStoredState() bool {
+	return mcs.hasStoredState
 }
 
 func (mcs *mockChainService) setState(flag bool) {

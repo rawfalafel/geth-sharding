@@ -35,7 +35,7 @@ type ChainService interface {
 type BlockChainService interface {
 	ProcessedBlockHashes() [][32]byte
 	ProcessBlock(b *Block)
-	HasStoredState() (bool, error)
+	HasStoredState() bool
 	ContainsBlock(h [32]byte) bool
 	SaveBlock(b *Block) error
 }

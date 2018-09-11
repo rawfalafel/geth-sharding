@@ -35,8 +35,6 @@ func (mp *mockP2P) Send(msg proto.Message, peer p2p.Peer) {
 }
 
 type mockChainService struct {
-	slotExists bool
-	checkError bool
 	getError   bool
 }
 
@@ -44,27 +42,21 @@ func (ms *mockChainService) ContainsBlock(h [32]byte) bool {
 	return false
 }
 
-func (ms *mockChainService) HasStoredState() (bool, error) {
-	return false, nil
+func (ms *mockChainService) HasStoredState() bool {
+	return false
 }
 
 func (ms *mockChainService) IncomingBlockFeed() *event.Feed {
 	return new(event.Feed)
 }
 
-func (ms *mockChainService) CheckForCanonicalBlockBySlot(slotnumber uint64) (bool, error) {
-	if ms.checkError {
-		return ms.slotExists, errors.New("mock check canonical block error")
-	}
-	return ms.slotExists, nil
+func (ms *mockChainService) CheckForCanonicalBlockBySlot(slotnumber uint64) bool {
+	return true
 }
 
 func (ms *mockChainService) GetCanonicalBlockBySlotNumber(slotnumber uint64) (*types.Block, error) {
 	if ms.getError {
 		return nil, errors.New("mock get canonical block error")
-	}
-	if !ms.slotExists {
-		return nil, errors.New("invalid key")
 	}
 	return types.NewBlock(&pb.BeaconBlock{SlotNumber: slotnumber}), nil
 }
@@ -253,7 +245,6 @@ func TestBlockRequestGetCanonicalError(t *testing.T) {
 		Data: request1,
 		Peer: p2p.Peer{},
 	}
-	ms.slotExists = true
 	ms.getError = true
 
 	ss.blockRequestBySlot <- msg1
@@ -285,14 +276,6 @@ func TestBlockRequestBySlot(t *testing.T) {
 		Peer: p2p.Peer{},
 	}
 
-	ms.checkError = true
-	ms.slotExists = true
-
-	ss.blockRequestBySlot <- msg1
-	testutil.AssertLogsContain(t, hook, "Error checking db for block mock check canonical block error")
-
-	ms.checkError = false
-
 	ss.blockRequestBySlot <- msg1
 	ss.cancel()
 	<-exitRoutine
@@ -308,8 +291,8 @@ func (ms *mockEmptyChainService) ContainsBlock(h [32]byte) bool {
 	return false
 }
 
-func (ms *mockEmptyChainService) HasStoredState() (bool, error) {
-	return ms.hasStoredState, nil
+func (ms *mockEmptyChainService) HasStoredState() bool {
+	return ms.hasStoredState
 }
 
 func (ms *mockEmptyChainService) IncomingBlockFeed() *event.Feed {
@@ -320,8 +303,8 @@ func (ms *mockEmptyChainService) setState(flag bool) {
 	ms.hasStoredState = flag
 }
 
-func (ms *mockEmptyChainService) CheckForCanonicalBlockBySlot(slotnumber uint64) (bool, error) {
-	return false, nil
+func (ms *mockEmptyChainService) CheckForCanonicalBlockBySlot(slotnumber uint64) bool {
+	return false
 }
 
 func (ms *mockEmptyChainService) GetCanonicalBlockBySlotNumber(slotnumber uint64) (*types.Block, error) {

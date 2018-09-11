@@ -16,9 +16,9 @@ var log = logrus.WithField("prefix", "sync")
 
 type chainService interface {
 	ContainsBlock(h [32]byte) bool
-	HasStoredState() (bool, error)
+	HasStoredState() bool
 	IncomingBlockFeed() *event.Feed
-	CheckForCanonicalBlockBySlot(slotnumber uint64) (bool, error)
+	CheckForCanonicalBlockBySlot(slotnumber uint64) bool
 	GetCanonicalBlockBySlotNumber(slotnumber uint64) (*types.Block, error)
 }
 
@@ -78,11 +78,7 @@ func NewSyncService(ctx context.Context, cfg Config, beaconp2p types.P2P, cs cha
 
 // Start begins the block processing goroutine.
 func (ss *Service) Start() {
-	stored, err := ss.chainService.HasStoredState()
-	if err != nil {
-		log.Errorf("error retrieving stored state: %v", err)
-		return
-	}
+	stored := ss.chainService.HasStoredState()
 
 	if !stored {
 		// TODO: Resume sync after completion of initial sync.
@@ -169,12 +165,7 @@ func (ss *Service) run() {
 				continue
 			}
 
-			blockExists, err := ss.chainService.CheckForCanonicalBlockBySlot(request.GetSlotNumber())
-			if err != nil {
-				log.Errorf("Error checking db for block %v", err)
-				continue
-			}
-			if !blockExists {
+			if blockExists := ss.chainService.CheckForCanonicalBlockBySlot(request.GetSlotNumber()); !blockExists {
 				continue
 			}
 

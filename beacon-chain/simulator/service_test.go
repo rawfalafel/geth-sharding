@@ -12,7 +12,8 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/prysmaticlabs/prysm/beacon-chain/types"
 	pb "github.com/prysmaticlabs/prysm/proto/beacon/p2p/v1"
-	"github.com/prysmaticlabs/prysm/shared/database"
+	"github.com/prysmaticlabs/prysm/beacon-chain/db"
+	"github.com/prysmaticlabs/prysm/beacon-chain/testutils"
 	"github.com/prysmaticlabs/prysm/shared/p2p"
 	"github.com/prysmaticlabs/prysm/shared/testutil"
 	"github.com/sirupsen/logrus"
@@ -52,14 +53,14 @@ func (mc *mockChainService) CurrentCrystallizedState() *types.CrystallizedState 
 
 func TestLifecycle(t *testing.T) {
 	hook := logTest.NewGlobal()
-	db := database.NewKVStore()
+	bolt := testutils.SetupDB(t)
 	cfg := &Config{
 		Delay:           time.Second,
 		BlockRequestBuf: 0,
 		P2P:             &mockP2P{},
 		Web3Service:     &mockPOWChainService{},
 		ChainService:    &mockChainService{},
-		BeaconDB:        db,
+		BeaconDB:        db.NewDB(bolt),
 		Validator:       false,
 	}
 	sim := NewSimulator(context.Background(), cfg)
@@ -77,14 +78,14 @@ func TestLifecycle(t *testing.T) {
 
 func TestBroadcastBlockHash(t *testing.T) {
 	hook := logTest.NewGlobal()
-	db := database.NewKVStore()
+	bolt := testutils.SetupDB(t)
 	cfg := &Config{
 		Delay:           time.Second,
 		BlockRequestBuf: 0,
 		P2P:             &mockP2P{},
 		Web3Service:     &mockPOWChainService{},
 		ChainService:    &mockChainService{},
-		BeaconDB:        db,
+		BeaconDB:        db.NewDB(bolt),
 		Validator:       false,
 	}
 	sim := NewSimulator(context.Background(), cfg)
@@ -113,14 +114,14 @@ func TestBroadcastBlockHash(t *testing.T) {
 
 func TestBlockRequest(t *testing.T) {
 	hook := logTest.NewGlobal()
-	db := database.NewKVStore()
+	bolt := testutils.SetupDB(t)
 	cfg := &Config{
 		Delay:           time.Second,
 		BlockRequestBuf: 0,
 		P2P:             &mockP2P{},
 		Web3Service:     &mockPOWChainService{},
 		ChainService:    &mockChainService{},
-		BeaconDB:        db,
+		BeaconDB:        db.NewDB(bolt),
 		Validator:       true,
 	}
 	sim := NewSimulator(context.Background(), cfg)
@@ -156,26 +157,6 @@ func TestBlockRequest(t *testing.T) {
 	exitRoutine <- true
 
 	testutil.AssertLogsContain(t, hook, fmt.Sprintf("Responding to full block request for hash: 0x%x", h))
-}
-
-func TestLastSimulatedSession(t *testing.T) {
-	db := database.NewKVStore()
-	cfg := &Config{
-		Delay:           time.Second,
-		BlockRequestBuf: 0,
-		P2P:             &mockP2P{},
-		Web3Service:     &mockPOWChainService{},
-		ChainService:    &mockChainService{},
-		BeaconDB:        db,
-		Validator:       true,
-	}
-	sim := NewSimulator(context.Background(), cfg)
-	if err := db.Put([]byte("last-simulated-block"), []byte{}); err != nil {
-		t.Fatalf("Could not store last simulated block: %v", err)
-	}
-	if _, err := sim.lastSimulatedSessionBlock(); err != nil {
-		t.Errorf("could not fetch last simulated session block: %v", err)
-	}
 }
 
 func TestDefaultConfig(t *testing.T) {
