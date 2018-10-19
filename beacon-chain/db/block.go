@@ -31,9 +31,9 @@ func createBlock(enc []byte) (*types.Block, error) {
 func (db *BeaconDB) GetBlock(hash [32]byte) (*types.Block, error) {
 	var block *types.Block
 	err := db.view(func(tx *bolt.Tx) error {
-		b := tx.Bucket(blockBucket)
+		b := tx.Bucket(mainBucket)
 
-		enc := b.Get(hash[:])
+		enc := b.Get(blockKey(hash[:]))
 		if enc == nil {
 			return nil
 		}
@@ -50,9 +50,9 @@ func (db *BeaconDB) GetBlock(hash [32]byte) (*types.Block, error) {
 func (db *BeaconDB) HasBlock(hash [32]byte) bool {
 	hasBlock := false
 	_ = db.view(func(tx *bolt.Tx) error {
-		b := tx.Bucket(blockBucket)
+		b := tx.Bucket(mainBucket)
 
-		hasBlock = b.Get(hash[:]) != nil
+		hasBlock = b.Get(blockKey(hash[:])) != nil
 
 		return nil
 	})
@@ -60,44 +60,24 @@ func (db *BeaconDB) HasBlock(hash [32]byte) bool {
 	return hasBlock
 }
 
-// SaveBlock accepts a block and writes it to disk.
-func (db *BeaconDB) SaveBlock(block *types.Block) error {
-	hash, err := block.Hash()
-	if err != nil {
-		return fmt.Errorf("failed to hash block: %v", err)
-	}
-	enc, err := block.Marshal()
-	if err != nil {
-		return fmt.Errorf("failed to encode block: %v", err)
-	}
-
-	return db.update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(blockBucket)
-
-		return b.Put(hash[:], enc)
-	})
-}
-
 // GetChainHead returns the head of the main chain.
 func (db *BeaconDB) GetChainHead() (*types.Block, error) {
 	var block *types.Block
 
 	err := db.view(func(tx *bolt.Tx) error {
-		chainInfo := tx.Bucket(chainInfoBucket)
-		mainChain := tx.Bucket(mainChainBucket)
-		blockBkt := tx.Bucket(blockBucket)
+		b := tx.Bucket(mainBucket)
 
-		height := chainInfo.Get(mainChainHeightKey)
+		height := b.Get(chainHeightKey)
 		if height == nil {
 			return errors.New("unable to determinechain height")
 		}
 
-		blockhash := mainChain.Get(height)
+		blockhash := b.Get(blockByHeightKey(height))
 		if blockhash == nil {
 			return fmt.Errorf("hash at the current height not found: %d", height)
 		}
 
-		enc := blockBkt.Get(blockhash)
+		enc := b.Get(blockKey(blockhash))
 		if enc == nil {
 			return fmt.Errorf("block not found: %x", blockhash)
 		}
@@ -113,52 +93,27 @@ func (db *BeaconDB) GetChainHead() (*types.Block, error) {
 
 // UpdateChainHead atomically updates the head of the chain as well as the corresponding state changes
 // Including a new crystallized state is optional.
-func (db *BeaconDB) UpdateChainHead(block *types.Block, aState *types.ActiveState, cState *types.CrystallizedState) error {
+func (db *BeaconDB) UpdateChainHead(block *types.Block) error {
 	blockhash, err := block.Hash()
 	if err != nil {
 		return fmt.Errorf("unable to get the block hash: %v", err)
 	}
 
-	aStateEnc, err := aState.Marshal()
-	if err != nil {
-		return fmt.Errorf("unable to encode the active state: %v", err)
-	}
-
-	var cStateEnc []byte
-	if cState != nil {
-		cStateEnc, err = cState.Marshal()
-		if err != nil {
-			return fmt.Errorf("unable to encode the crystallized state: %v", err)
-		}
-	}
-
 	slotBinary := encodeSlotNumber(block.SlotNumber())
 
 	return db.update(func(tx *bolt.Tx) error {
-		blockBucket := tx.Bucket(blockBucket)
-		chainInfo := tx.Bucket(chainInfoBucket)
-		mainChain := tx.Bucket(mainChainBucket)
+		b := tx.Bucket(mainBucket)
 
-		if blockBucket.Get(blockhash[:]) == nil {
+		if b.Get(blockKey(blockhash[:])) == nil {
 			return fmt.Errorf("expected block %#x to have already been saved before updating head: %v", blockhash, err)
 		}
 
-		if err := mainChain.Put(slotBinary, blockhash[:]); err != nil {
+		if err := b.Put(blockByHeightKey(slotBinary), blockhash[:]); err != nil {
 			return fmt.Errorf("failed to include the block in the main chain bucket: %v", err)
 		}
 
-		if err := chainInfo.Put(mainChainHeightKey, slotBinary); err != nil {
+		if err := b.Put(chainHeightKey, slotBinary); err != nil {
 			return fmt.Errorf("failed to record the block as the head of the main chain: %v", err)
-		}
-
-		if err := chainInfo.Put(aStateLookupKey, aStateEnc); err != nil {
-			return fmt.Errorf("failed to save active state as canonical: %v", err)
-		}
-
-		if cStateEnc != nil {
-			if err := chainInfo.Put(cStateLookupKey, cStateEnc); err != nil {
-				return fmt.Errorf("failed to save crystallized state as canonical: %v", err)
-			}
 		}
 
 		return nil
@@ -172,15 +127,14 @@ func (db *BeaconDB) GetBlockBySlot(slot uint64) (*types.Block, error) {
 	slotEnc := encodeSlotNumber(slot)
 
 	err := db.view(func(tx *bolt.Tx) error {
-		mainChain := tx.Bucket(mainChainBucket)
-		blockBkt := tx.Bucket(blockBucket)
+		b := tx.Bucket(mainBucket)
 
-		blockhash := mainChain.Get(slotEnc)
+		blockhash := b.Get(blockByHeightKey(slotEnc))
 		if blockhash == nil {
 			return nil
 		}
 
-		enc := blockBkt.Get(blockhash)
+		enc := b.Get(blockKey(blockhash))
 		if enc == nil {
 			return fmt.Errorf("block not found: %x", blockhash)
 		}
@@ -209,4 +163,57 @@ func (db *BeaconDB) GetGenesisTime() (time.Time, error) {
 	}
 
 	return genesisTime, nil
+}
+
+// RecordNewBlock ...
+func (db *BeaconDB) RecordNewBlock(block *types.Block, aState *types.ActiveState, cState *types.CrystallizedState) error {
+	blockHash, err := block.Hash()
+	if err != nil {
+		return fmt.Errorf("failed to hash block: %v", err)
+	}
+	blockEnc, err := block.Marshal()
+	if err != nil {
+		return fmt.Errorf("failed to encode block: %v", err)
+	}
+
+	aStateHash, err := aState.Hash()
+	if err != nil {
+		return fmt.Errorf("failed to hash active state: %v", err)
+	}
+	aStateEnc, err := aState.Marshal()
+	if err != nil {
+		return fmt.Errorf("failed to encode active state: %v", err)
+	}
+
+	var cStateHash [32]byte
+	var cStateEnc []byte
+	if cState != nil {
+		cStateHash, err = cState.Hash()
+		if err != nil {
+			return fmt.Errorf("failed to hash crystallized state: %v", err)
+		}
+		cStateEnc, err = cState.Marshal()
+		if err != nil {
+			return fmt.Errorf("failed to encode crystallized state: %v", err)
+		}
+	}
+
+	return db.update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(mainBucket)
+
+		if err := b.Put(blockKey(blockHash[:]), blockEnc); err != nil {
+			return err
+		}
+		if err := b.Put(aStateKey(aStateHash[:]), aStateEnc); err != nil {
+			return err
+		}
+		if cState == nil {
+			return nil
+		}
+		if err := b.Put(cStateKey(cStateHash[:]), cStateEnc); err != nil {
+			return err
+		}
+
+		return nil
+	})
 }

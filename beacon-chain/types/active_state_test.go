@@ -332,7 +332,7 @@ func TestGetSignedParentHashes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to getSignedParentHashes: %v", err)
 	}
-	if hashes[0][0] != 'A' || hashes[1][0] != 'B' {
+	if hashes[0][0] != 'B' || hashes[1][0] != 'C' {
 		t.Fatalf("getSignedParentHashes did not return expected value: %#x and %#x", hashes[0], hashes[1])
 	}
 	if hashes[2][0] != 0 || hashes[3][0] != 1 {
@@ -374,7 +374,7 @@ func TestGetSignedParentHashesIndexFail(t *testing.T) {
 
 	a2 := &pb.AggregatedAttestation{
 		ObliqueParentHashes: [][]byte{},
-		Slot:                9,
+		Slot:                8,
 	}
 	_, err = aState.getSignedParentHashes(b, a2)
 	if err == nil {

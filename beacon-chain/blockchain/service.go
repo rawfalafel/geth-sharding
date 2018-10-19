@@ -252,14 +252,14 @@ func (c *ChainService) blockProcessing(processedBlock chan<- *types.Block) {
 				parent.SlotNumber(),
 				c.genesisTime,
 			); !valid {
-				log.Errorf("Block failed validity conditions: %v", err)
+				log.Error("Block failed validity conditions")
 				continue
 			}
 
 			// If the block is valid, we compute its associated state tuple (active, crystallized)
 			// and apply a block scoring function.
 			var didCycleTransition bool
-			for cState.IsCycleTransition(parent.SlotNumber()) {
+			for cState.IsCycleTransition(block.SlotNumber()) {
 				cState, err = cState.NewStateRecalculations(
 					aState,
 					block,

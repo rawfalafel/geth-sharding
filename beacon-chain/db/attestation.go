@@ -18,9 +18,9 @@ func (db *BeaconDB) SaveAttestation(attestation *types.Attestation) error {
 	}
 
 	return db.update(func(tx *bolt.Tx) error {
-		a := tx.Bucket(attestationBucket)
+		a := tx.Bucket(mainBucket)
 
-		return a.Put(hash[:], encodedState)
+		return a.Put(attestationKey(hash[:]), encodedState)
 	})
 }
 
@@ -28,9 +28,9 @@ func (db *BeaconDB) SaveAttestation(attestation *types.Attestation) error {
 func (db *BeaconDB) GetAttestation(hash [32]byte) (*types.Attestation, error) {
 	var attestation *types.Attestation
 	err := db.view(func(tx *bolt.Tx) error {
-		a := tx.Bucket(attestationBucket)
+		a := tx.Bucket(mainBucket)
 
-		enc := a.Get(hash[:])
+		enc := a.Get(attestationKey(hash[:]))
 		if enc == nil {
 			return nil
 		}
@@ -47,9 +47,9 @@ func (db *BeaconDB) GetAttestation(hash [32]byte) (*types.Attestation, error) {
 func (db *BeaconDB) HasAttestation(hash [32]byte) bool {
 	exists := false
 	db.view(func(tx *bolt.Tx) error {
-		a := tx.Bucket(attestationBucket)
+		a := tx.Bucket(mainBucket)
 
-		exists = a.Get(hash[:]) != nil
+		exists = a.Get(attestationKey(hash[:])) != nil
 		return nil
 	})
 	return exists

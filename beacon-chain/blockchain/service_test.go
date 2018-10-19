@@ -3,15 +3,15 @@ package blockchain
 import (
 	"context"
 	"errors"
-	"io/ioutil"
+	// "io/ioutil"
 	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	gethTypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/prysmaticlabs/prysm/beacon-chain/casper"
 	"github.com/prysmaticlabs/prysm/beacon-chain/db"
-	"github.com/prysmaticlabs/prysm/beacon-chain/params"
 	"github.com/prysmaticlabs/prysm/beacon-chain/powchain"
 	btestutil "github.com/prysmaticlabs/prysm/beacon-chain/testutil"
 	"github.com/prysmaticlabs/prysm/beacon-chain/types"
@@ -24,7 +24,7 @@ import (
 
 func init() {
 	logrus.SetLevel(logrus.DebugLevel)
-	logrus.SetOutput(ioutil.Discard)
+	// logrus.SetOutput(ioutil.Discard)
 }
 
 type mockClient struct{}
@@ -174,9 +174,8 @@ func TestRunningChainService(t *testing.T) {
 	}
 
 	currentSlot := uint64(1)
-	slotsStart := crystallized.LastStateRecalculationSlot() - params.GetConfig().CycleLength
-	slotIndex := (currentSlot - slotsStart) % params.GetConfig().CycleLength
-	Shard := crystallized.ShardAndCommitteesForSlots()[slotIndex].ArrayShardAndCommittee[0].Shard
+	attestationSlot := uint64(0)
+	shard := crystallized.ShardAndCommitteesForSlots()[attestationSlot].ArrayShardAndCommittee[0].Shard
 
 	block := types.NewBlock(&pb.BeaconBlock{
 		Slot:                  currentSlot,
@@ -185,9 +184,9 @@ func TestRunningChainService(t *testing.T) {
 		AncestorHashes:        [][]byte{parentHash[:]},
 		PowChainRef:           []byte("a"),
 		Attestations: []*pb.AggregatedAttestation{{
-			Slot:               currentSlot,
+			Slot:               attestationSlot,
 			AttesterBitfield:   []byte{128, 0},
-			Shard:              Shard,
+			Shard:              shard,
 			JustifiedBlockHash: parentHash[:],
 		}},
 	})
@@ -229,6 +228,14 @@ func TestDoesPOWBlockExist(t *testing.T) {
 	testutil.AssertLogsContain(t, hook, "fetching PoW block corresponding to mainchain reference failed")
 }
 
+func getShardForSlot(t *testing.T, cState *types.CrystallizedState, slot uint64) uint64 {
+	shardAndCommittee, err := casper.GetShardAndCommitteesForSlot(cState.ShardAndCommitteesForSlots(), cState.LastStateRecalculationSlot(), slot)
+	if err != nil {
+		t.Fatalf("Unable to get shard for slot: %d", slot)
+	}
+	return shardAndCommittee.ArrayShardAndCommittee[0].Shard
+}
+
 func TestProcessBlocksWithCorrectAttestations(t *testing.T) {
 	db := btestutil.SetupDB(t)
 	defer btestutil.TeardownDB(t, db)
@@ -255,7 +262,8 @@ func TestProcessBlocksWithCorrectAttestations(t *testing.T) {
 		t.Fatalf("Failed to compute block's hash: %v", err)
 	}
 
-	currentSlot := uint64(65)
+	currentSlot := uint64(1)
+	attestationSlot := currentSlot-1
 
 	block1 := types.NewBlock(&pb.BeaconBlock{
 		AncestorHashes:        [][]byte{block0Hash[:]},
@@ -263,9 +271,9 @@ func TestProcessBlocksWithCorrectAttestations(t *testing.T) {
 		ActiveStateRoot:       ActiveStateRoot[:],
 		CrystallizedStateRoot: CrystallizedStateRoot[:],
 		Attestations: []*pb.AggregatedAttestation{{
-			Slot:               currentSlot - 1,
+			Slot:               attestationSlot,
 			AttesterBitfield:   []byte{255, 254},
-			Shard:              1,
+			Shard:              getShardForSlot(t, crystallized, attestationSlot),
 			JustifiedBlockHash: block0Hash[:],
 		}},
 	})
@@ -296,8 +304,18 @@ func TestProcessBlocksWithCorrectAttestations(t *testing.T) {
 		AncestorHashes: [][]byte{block1Hash[:]},
 		Slot:           currentSlot,
 		Attestations: []*pb.AggregatedAttestation{
-			{Slot: currentSlot - 2, AttesterBitfield: []byte{255, 254}, Shard: 1, JustifiedBlockHash: block0Hash[:]},
-			{Slot: currentSlot - 1, AttesterBitfield: []byte{255, 254}, Shard: 2, JustifiedBlockHash: block0Hash[:]},
+			{
+				Slot: currentSlot - 2,
+				AttesterBitfield: []byte{255, 254},
+				Shard: getShardForSlot(t, crystallized, currentSlot - 2),
+				JustifiedBlockHash: block0Hash[:],
+			},
+			{
+				Slot: currentSlot - 1,
+				AttesterBitfield: []byte{255, 254},
+				Shard: getShardForSlot(t, crystallized, currentSlot - 1),
+				JustifiedBlockHash: block0Hash[:],
+			},
 		}})
 	block2Hash, err := block2.Hash()
 	if err != nil {
@@ -311,9 +329,24 @@ func TestProcessBlocksWithCorrectAttestations(t *testing.T) {
 		AncestorHashes: [][]byte{block2Hash[:]},
 		Slot:           currentSlot,
 		Attestations: []*pb.AggregatedAttestation{
-			{Slot: currentSlot - 3, AttesterBitfield: []byte{255, 254}, Shard: 1, JustifiedBlockHash: block0Hash[:]},
-			{Slot: currentSlot - 2, AttesterBitfield: []byte{255, 254}, Shard: 2, JustifiedBlockHash: block0Hash[:]},
-			{Slot: currentSlot - 1, AttesterBitfield: []byte{255, 254}, Shard: 3, JustifiedBlockHash: block0Hash[:]},
+			{
+				Slot: currentSlot - 3,
+				AttesterBitfield: []byte{255, 254},
+				Shard: getShardForSlot(t, crystallized, currentSlot - 3),
+				JustifiedBlockHash: block0Hash[:],
+			},
+			{
+				Slot: currentSlot - 2,
+				AttesterBitfield: []byte{255, 254},
+				Shard: getShardForSlot(t, crystallized, currentSlot - 2),
+				JustifiedBlockHash: block0Hash[:],
+			},
+			{
+				Slot: currentSlot - 1,
+				AttesterBitfield: []byte{255, 254},
+				Shard: getShardForSlot(t, crystallized, currentSlot - 1),
+				JustifiedBlockHash: block0Hash[:],
+			},
 		}})
 
 	chainService.incomingBlockChan <- block1

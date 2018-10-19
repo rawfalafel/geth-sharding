@@ -2,6 +2,7 @@
 package simulator
 
 import (
+	"github.com/prysmaticlabs/prysm/beacon-chain/casper"
 	"context"
 	"fmt"
 	"time"
@@ -54,8 +55,8 @@ type Config struct {
 type beaconDB interface {
 	GetChainHead() (*types.Block, error)
 	GetGenesisTime() (time.Time, error)
-	GetActiveState() (*types.ActiveState, error)
-	GetCrystallizedState() (*types.CrystallizedState, error)
+	GetActiveState([]byte) (*types.ActiveState, error)
+	GetCrystallizedState([]byte) (*types.CrystallizedState, error)
 }
 
 // DefaultConfig options for the simulator.
@@ -125,27 +126,18 @@ func (sim *Simulator) run(slotInterval <-chan uint64, requestChan <-chan p2p.Mes
 			log.Debug("Simulator context closed, exiting goroutine")
 			return
 		case slot := <-slotInterval:
-			aState, err := sim.beaconDB.GetActiveState()
+			aState, err := sim.beaconDB.GetActiveState(lastHash[:])
 			if err != nil {
 				log.Errorf("Failed to get active state: %v", err)
 				continue
 			}
-			cState, err := sim.beaconDB.GetCrystallizedState()
+			cState, err := sim.beaconDB.GetCrystallizedState(lastHash[:])
 			if err != nil {
 				log.Errorf("Failed to get crystallized state: %v", err)
 				continue
 			}
-			aStateHash, err := aState.Hash()
-			if err != nil {
-				log.Errorf("Failed to hash active state: %v", err)
-				continue
-			}
 
-			cStateHash, err := cState.Hash()
-			if err != nil {
-				log.Errorf("Failed to hash crystallized state: %v", err)
-				continue
-			}
+			cState.NewStateRecalculations(aState, )
 
 			var powChainRef []byte
 			if sim.enablePOWChain {
@@ -154,9 +146,13 @@ func (sim *Simulator) run(slotInterval <-chan uint64, requestChan <-chan p2p.Mes
 				powChainRef = []byte{byte(slot)}
 			}
 
-			slotsStart := cState.LastStateRecalculationSlot() - params.GetConfig().CycleLength
-			slotIndex := (slot - 1 - slotsStart) % params.GetConfig().CycleLength
-			shardID := cState.ShardAndCommitteesForSlots()[slotIndex].ArrayShardAndCommittee[0].Shard
+			attestationSlot := slot-1
+			shardAndCommittees, err := casper.GetShardAndCommitteesForSlot(cState.ShardAndCommitteesForSlots(), cState.LastStateRecalculationSlot(), attestationSlot)
+			if err != nil {
+				log.Errorf("Failed to get shards and committees for slot %d: %v", slot, err)
+				continue
+			}
+			shardID := shardAndCommittees.ArrayShardAndCommittee[0].Shard
 
 			parentHash := make([]byte, 32)
 			copy(parentHash, lastHash[:])
@@ -169,13 +165,9 @@ func (sim *Simulator) run(slotInterval <-chan uint64, requestChan <-chan p2p.Mes
 				AncestorHashes:        [][]byte{parentHash},
 				RandaoReveal:          params.GetConfig().SimulatedBlockRandao[:],
 				Attestations: []*pb.AggregatedAttestation{
-					{Slot: slot - 1, AttesterBitfield: []byte{byte(128)}, JustifiedBlockHash: parentHash, Shard: shardID},
+					{Slot: attestationSlot, AttesterBitfield: []byte{byte(128)}, JustifiedBlockHash: parentHash, Shard: shardID},
 				},
 			})
-			shardID++
-			if shardID == uint64(params.GetConfig().ShardCount) {
-				shardID = 0
-			}
 
 			hash, err := block.Hash()
 			if err != nil {
@@ -189,7 +181,7 @@ func (sim *Simulator) run(slotInterval <-chan uint64, requestChan <-chan p2p.Mes
 			log.WithFields(logrus.Fields{
 				"hash": fmt.Sprintf("%#x", hash),
 				"slot": slot,
-			}).Debug("Broadcast block hash")
+			}).Info("Broadcast block hash")
 
 			broadcastedBlocks[hash] = block
 			lastHash = hash

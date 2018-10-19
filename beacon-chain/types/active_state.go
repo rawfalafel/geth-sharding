@@ -26,7 +26,7 @@ type ActiveState struct {
 
 // NewGenesisActiveState initializes the active state for slot 0.
 func NewGenesisActiveState() *ActiveState {
-	// Bootstrap recent block hashes to all 0s for first 2 cycles.
+	// Bootstrap recent block hashes to all 0s for 2 cycles.
 	var recentBlockHashes [][]byte
 	for i := 0; i < 2*int(params.GetConfig().CycleLength); i++ {
 		recentBlockHashes = append(recentBlockHashes, make([]byte, 0, 32))
@@ -312,7 +312,7 @@ func (a *ActiveState) getSignedParentHashes(block *Block, attestation *pb.Aggreg
 	obliqueParentHashes := attestation.ObliqueParentHashes
 	earliestSlot := int(block.SlotNumber()) - len(recentBlockHashes)
 
-	startIdx := int(attestation.Slot) - earliestSlot - int(params.GetConfig().CycleLength)
+	startIdx := int(attestation.Slot) - earliestSlot - int(params.GetConfig().CycleLength) + 1
 	endIdx := startIdx - len(attestation.ObliqueParentHashes) + int(params.GetConfig().CycleLength)
 	if startIdx < 0 || endIdx > len(recentBlockHashes) || endIdx <= startIdx {
 		return nil, fmt.Errorf("attempt to fetch recent blockhashes from %d to %d invalid", startIdx, endIdx)

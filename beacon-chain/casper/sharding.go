@@ -29,8 +29,13 @@ func InitialShardAndCommitteesForSlots(validators []*pb.ValidatorRecord) ([]*pb.
 		return nil, err
 	}
 
+	initialCommittees := make([]*pb.ShardAndCommitteeArray, 0, len(committees) * 3)
+	initialCommittees = append(initialCommittees, committees...)
+	initialCommittees = append(initialCommittees, committees...)
+	initialCommittees = append(initialCommittees, committees...)
+
 	// Starting with 2 cycles (128 slots) with the same committees.
-	return append(committees, committees...), nil
+	return initialCommittees, nil
 }
 
 // splitBySlotShard splits the validator list into evenly sized committees and assigns each
