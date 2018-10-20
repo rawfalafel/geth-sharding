@@ -1,5 +1,5 @@
 package casper
-
+/*
 import (
 	"bytes"
 	"encoding/binary"
@@ -268,3 +268,4 @@ func TestProcessSpecialRecords(t *testing.T) {
 		t.Error("Failed to set validator 8's randao reveal")
 	}
 }
+*/

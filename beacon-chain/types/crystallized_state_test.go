@@ -148,7 +148,7 @@ func TestInitialDeriveCrystallizedState(t *testing.T) {
 	binary.BigEndian.PutUint64(validator9Index, 9)
 	aState.data.PendingSpecials = []*pb.SpecialRecord{{Kind: uint32(params.RandaoChange), Data: [][]byte{validator9Index, {byte('A')}}}}
 
-	newCState, err := cState.NewStateRecalculations(aState, block, false, false)
+	newCState, err := cState.CalculateNewState(aState, block)
 	if err != nil {
 		t.Fatalf("failed to derive new crystallized state: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestNextDeriveCrystallizedSlot(t *testing.T) {
 	aState := NewGenesisActiveState()
 	block := NewBlock(nil)
 
-	cState, err = cState.NewStateRecalculations(aState, block, false, false)
+	cState, err = cState.CalculateNewState(aState, block)
 	if err != nil {
 		t.Fatalf("failed to derive next crystallized state: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestNextDeriveCrystallizedSlot(t *testing.T) {
 		RecentBlockHashes: recentShardBlockHashes,
 	}, voteCache)
 
-	cState, err = cState.NewStateRecalculations(aState, block, false, false)
+	cState, err = cState.CalculateNewState(aState, block)
 	if err != nil {
 		t.Fatalf("failed to derive crystallized state: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestNextDeriveCrystallizedSlot(t *testing.T) {
 		t.Fatalf("expected finalized slot to equal %d: got %d", 0, cState.LastFinalizedSlot())
 	}
 
-	cState, err = cState.NewStateRecalculations(aState, block, false, false)
+	cState, err = cState.CalculateNewState(aState, block)
 	if err != nil {
 		t.Fatalf("failed to derive crystallized state: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestNextDeriveCrystallizedSlot(t *testing.T) {
 		t.Fatalf("expected finalized slot to equal %d: got %d", params.GetConfig().CycleLength-2, cState.LastFinalizedSlot())
 	}
 
-	cState, err = cState.NewStateRecalculations(aState, block, true, true)
+	cState, err = cState.CalculateNewState(aState, block)
 	if err != nil {
 		t.Fatalf("failed to derive crystallized state: %v", err)
 	}
@@ -305,16 +305,17 @@ func TestProcessCrosslinks(t *testing.T) {
 		Validators:                 validators,
 		ShardAndCommitteesForSlots: shardAndCommitteesForSlots,
 	})
-	newCrosslinks, err := cState.processCrosslinks(pAttestations, 50, cState.Validators(), 100)
+	err = cState.processCrosslinks(pAttestations, cState.Validators(), 100)
 	if err != nil {
 		t.Fatalf("process crosslink failed %v", err)
 	}
 
-	if newCrosslinks[1].Slot != 50 {
-		t.Errorf("Slot did not change for new cross link. Wanted: 50. Got: %d", newCrosslinks[0].Slot)
+	crosslinks := cState.Crosslinks()
+	if crosslinks[1].Slot != 50 {
+		t.Errorf("Slot did not change for new cross link. Wanted: 50. Got: %d", crosslinks[1].Slot)
 	}
-	if !bytes.Equal(newCrosslinks[1].ShardBlockHash, []byte{'a'}) {
-		t.Errorf("ShardBlockHash did not change for new cross link. Wanted a. Got: %s", newCrosslinks[0].ShardBlockHash)
+	if !bytes.Equal(crosslinks[1].ShardBlockHash, []byte{'a'}) {
+		t.Errorf("ShardBlockHash did not change for new cross link. Wanted a. Got: %s", crosslinks[1].ShardBlockHash)
 	}
 	//TODO(#538) Implement tests on balances of the validators in committee once big.Int is introduced.
 }

@@ -286,9 +286,9 @@ func (a *ActiveState) CleanUpActiveState(lastStateRecalc uint64) *ActiveState {
 	}, a.blockVoteCache)
 }
 
-// CalculateNewActiveState returns the active state for `block` based on its own state.
+// CalculateNewState returns the active state for `block` based on its own state.
 // This method should not modify its own state.
-func (a *ActiveState) CalculateNewActiveState(
+func (a *ActiveState) CalculateNewState(
 	block *Block,
 	cState *CrystallizedState,
 	parentSlot uint64,

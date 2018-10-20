@@ -1,11 +1,16 @@
 package types
 
 import (
+	"encoding/binary"
+	"fmt"
+
 	"github.com/gogo/protobuf/proto"
 	"github.com/prysmaticlabs/prysm/beacon-chain/casper"
 	"github.com/prysmaticlabs/prysm/beacon-chain/params"
 	pb "github.com/prysmaticlabs/prysm/proto/beacon/p2p/v1"
+	"github.com/prysmaticlabs/prysm/shared/bitutil"
 	"github.com/prysmaticlabs/prysm/shared/hashutil"
+	"github.com/prysmaticlabs/prysm/shared/mathutil"
 )
 
 var shardCount = params.GetConfig().ShardCount
@@ -163,13 +168,6 @@ func (c *CrystallizedState) LastFinalizedSlot() uint64 {
 	return c.data.LastFinalizedSlot
 }
 
-// TotalDeposits returns total balance of the deposits of the active validators.
-func (c *CrystallizedState) TotalDeposits() uint64 {
-	validators := c.data.Validators
-	totalDeposit := casper.TotalActiveValidatorDeposit(validators)
-	return totalDeposit
-}
-
 // ValidatorSetChangeSlot returns the slot of last time validator set changes.
 func (c *CrystallizedState) ValidatorSetChangeSlot() uint64 {
 	return c.data.ValidatorSetChangeSlot
@@ -235,73 +233,40 @@ func (c *CrystallizedState) getAttesterIndices(attestation *pb.AggregatedAttesta
 	return casper.CommitteeInShardAndSlot(slotIndex, attestation.GetShard(), c.data.GetShardAndCommitteesForSlots())
 }
 
-// NewStateRecalculations computes the new crystallized state, given the previous crystallized state
+// CalculateNewState computes the new crystallized state, given the previous crystallized state
 // and the current active state. This method is called during a cycle transition.
 // We also check for validator set change transition and compute for new committees if necessary during this transition.
-func (c *CrystallizedState) NewStateRecalculations(aState *ActiveState, block *Block, enableCrossLinks bool, enableRewardChecking bool) (*CrystallizedState, error) {
-	var lastStateRecalculationSlotCycleBack uint64
-	var err error
-
+func (c *CrystallizedState) CalculateNewState(aState *ActiveState, block *Block) (*CrystallizedState, error) {
 	newState := c.CopyState()
-	justifiedStreak := c.JustifiedStreak()
-	justifiedSlot := c.LastJustifiedSlot()
-	finalizedSlot := c.LastFinalizedSlot()
-	blockVoteCache := aState.GetBlockVoteCache()
-	timeSinceFinality := block.SlotNumber() - newState.LastFinalizedSlot()
-	recentBlockHashes := aState.RecentBlockHashes()
-	newState.data.Validators = casper.CopyValidators(newState.Validators())
 
+	var cycleStart uint64
 	if c.LastStateRecalculationSlot() < params.GetConfig().CycleLength {
-		lastStateRecalculationSlotCycleBack = 0
+		cycleStart = 0
 	} else {
-		lastStateRecalculationSlotCycleBack = c.LastStateRecalculationSlot() - params.GetConfig().CycleLength
+		cycleStart = c.LastStateRecalculationSlot() - params.GetConfig().CycleLength
 	}
 
-	// If reward checking is disabled, the new set of validators for the cycle
-	// will remain the same.
-	if !enableRewardChecking {
-		newState.data.Validators = c.Validators()
-	}
+	actives, totalBalance := getActivesAndTotal(c.Validators())
 
 	// walk through all the slots from LastStateRecalculationSlot - cycleLength to LastStateRecalculationSlot - 1.
-	for i := uint64(0); i < params.GetConfig().CycleLength; i++ {
-		var blockVoteBalance uint64
+	newState.processBlocks(actives, aState, totalBalance, cycleStart)
 
-		slot := lastStateRecalculationSlotCycleBack + i
-		blockHash := recentBlockHashes[i]
-
-		blockVoteBalance, newState.data.Validators = casper.TallyVoteBalances(blockHash, slot,
-			blockVoteCache, newState.Validators(), timeSinceFinality, enableRewardChecking)
-
-		justifiedSlot, finalizedSlot, justifiedStreak = casper.FinalizeAndJustifySlots(slot, justifiedSlot, finalizedSlot,
-			justifiedStreak, blockVoteBalance, c.TotalDeposits())
-
-		if enableCrossLinks {
-			newState.data.Crosslinks, err = newState.processCrosslinks(aState.PendingAttestations(), slot, newState.Validators(), block.SlotNumber())
-			if err != nil {
-				return nil, err
-			}
-		}
+	// TODO: Update balance based on original balance of validator, not balance after `CalculateRewards`.
+	err := newState.processCrosslinks(aState.PendingAttestations(), actives, totalBalance)
+	if err != nil {
+		return nil, fmt.Errorf("unable to process crosslinks: %v", err)
 	}
-
-	newState.data.LastJustifiedSlot = justifiedSlot
-	newState.data.LastFinalizedSlot = finalizedSlot
-	newState.data.JustifiedStreak = justifiedStreak
-	newState.data.LastStateRecalculationSlot = newState.LastStateRecalculationSlot() + params.GetConfig().CycleLength
 
 	// Process the pending special records gathered from last cycle.
-	newState.data.Validators, err = casper.ProcessSpecialRecords(block.SlotNumber(), newState.Validators(), aState.PendingSpecials())
-	if err != nil {
-		return nil, err
-	}
+	processSpecialRecords(actives, aState.PendingSpecials(), block.SlotNumber())
 
 	// Exit the validators when their balance fall below min online deposit size.
-	newState.data.Validators = casper.CheckValidatorMinDeposit(newState.Validators(), block.SlotNumber())
+	exitValidatorsBelowMinBalance(actives, block.SlotNumber())
 
-	newState.data.LastFinalizedSlot = finalizedSlot
+	newState.data.LastStateRecalculationSlot = newState.LastStateRecalculationSlot() + params.GetConfig().CycleLength
 
 	// Entering new validator set change transition.
-	if c.isValidatorSetChange(block.SlotNumber()) {
+	if newState.isValidatorSetChange(block.SlotNumber()) {
 		log.Info("Entering validator set change transition")
 		newState.data.ValidatorSetChangeSlot = newState.LastStateRecalculationSlot()
 		newState.data.ShardAndCommitteesForSlots, err = newState.newValidatorSetRecalculations(block.ParentHash())
@@ -311,10 +276,31 @@ func (c *CrystallizedState) NewStateRecalculations(aState *ActiveState, block *B
 
 		period := block.SlotNumber() / params.GetConfig().WithdrawalPeriod
 		totalPenalties := newState.penalizedETH(period)
-		newState.data.Validators = casper.ChangeValidators(block.SlotNumber(), totalPenalties, newState.Validators())
+		newState.data.Validators = casper.ChangeValidators(block.SlotNumber(), totalPenalties, totalBalance, newState.Validators())
 	}
 
 	return newState, nil
+}
+
+func (c *CrystallizedState) processBlocks(actives []*pb.ValidatorRecord, aState *ActiveState, totalBalance, cycleStart uint64) error {
+	for i := uint64(0); i < params.GetConfig().CycleLength; i++ {
+		slot := cycleStart + i
+		blockHash := aState.RecentBlockHashes()[i]
+
+		timeSinceFinality := slot - c.LastFinalizedSlot()
+		// TODO: Handle no cache
+		voteCache, _ := aState.blockVoteCache[blockHash]
+		participatingTotal := voteCache.VoteTotalDeposit
+		participatingIndices := voteCache.VoterIndices
+
+		// TODO: Check if quadraticPenaltyQuotient should be in seconds or slots
+		// TODO: Include penalties when `status == PENALIZED`
+		calculateRewards(actives, timeSinceFinality, totalBalance, participatingTotal, participatingIndices)
+
+		finalizeAndJustifySlots(c.Proto(), slot, participatingTotal, totalBalance)
+	}
+
+	return nil
 }
 
 // newValidatorSetRecalculations recomputes the validator set.
@@ -336,51 +322,60 @@ func (c *CrystallizedState) newValidatorSetRecalculations(seed [32]byte) ([]*pb.
 	return append(c.data.ShardAndCommitteesForSlots[:params.GetConfig().CycleLength], newShardCommitteeArray...), nil
 }
 
-func copyCrosslinks(existing []*pb.CrosslinkRecord) []*pb.CrosslinkRecord {
-	new := make([]*pb.CrosslinkRecord, len(existing))
-	for i := 0; i < len(existing); i++ {
-		oldCL := existing[i]
-		newBlockhash := make([]byte, len(oldCL.ShardBlockHash))
-		copy(newBlockhash, oldCL.ShardBlockHash)
-		newCL := &pb.CrosslinkRecord{
-			RecentlyChanged: oldCL.RecentlyChanged,
-			ShardBlockHash:  newBlockhash,
-			Slot:            oldCL.Slot,
-		}
-		new[i] = newCL
-	}
-
-	return new
-}
-
 // processCrosslinks checks if the proposed shard block has recevied
 // 2/3 of the votes. If yes, we update crosslink record to point to
 // the proposed shard block with latest beacon chain slot numbers.
-func (c *CrystallizedState) processCrosslinks(pendingAttestations []*pb.AggregatedAttestation, slot uint64,
-	validators []*pb.ValidatorRecord, currentSlot uint64) ([]*pb.CrosslinkRecord, error) {
-	crosslinkRecords := copyCrosslinks(c.data.Crosslinks)
+func (c *CrystallizedState) processCrosslinks(
+	pendingAttestations []*pb.AggregatedAttestation,
+	actives []*pb.ValidatorRecord,
+	totalBalance uint64) error {
 
+	rewardQuotient := getRewardQuotient(totalBalance)
 	for _, attestation := range pendingAttestations {
+		if c.Crosslinks()[attestation.Shard].RecentlyChanged {
+			continue
+		}
+
 		indices, err := c.getAttesterIndices(attestation)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		totalBalance, voteBalance, err := casper.VotedBalanceInAttestation(validators, indices, attestation)
+		totalBalance, voteBalance, err := casper.AttestationBalances(actives, indices, attestation)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		err = casper.ApplyCrosslinkRewardsAndPenalties(crosslinkRecords, currentSlot, indices, attestation,
-			validators, totalBalance, voteBalance)
-		if err != nil {
-			return nil, err
+		if 3*voteBalance < 2*totalBalance {
+			continue
 		}
 
-		crosslinkRecords = casper.ProcessBalancesInCrosslink(slot, voteBalance, totalBalance, attestation, crosslinkRecords)
+		c.Crosslinks()[attestation.Shard] = &pb.CrosslinkRecord{
+			RecentlyChanged: true,
+			ShardBlockHash:  attestation.ShardBlockHash,
+			Slot:            attestation.Slot,
+		}
 
+		timeSinceFinality := attestation.Slot - c.LastFinalizedSlot()
+		rewardFn := getRewardFn(int64(voteBalance), int64(totalBalance), rewardQuotient)
+		penaltyFn := getPenaltyFn(timeSinceFinality, rewardQuotient)
+
+		for index, validatorIndex := range indices {
+			attester := actives[validatorIndex]
+
+			didVote, err := bitutil.CheckBit(attestation.AttesterBitfield, index)
+			if err != nil {
+				return fmt.Errorf("CheckBit failed: %v", err)
+			}
+
+			if didVote {
+				rewardFn(attester)
+			} else {
+				penaltyFn(attester)
+			}
+		}
 	}
-	return crosslinkRecords, nil
+	return nil
 }
 
 // penalizedETH calculates penalized total ETH during the last 3 withdrawal periods.
@@ -399,4 +394,167 @@ func (c *CrystallizedState) penalizedETH(periodIndex uint64) uint64 {
 	}
 
 	return penalties
+}
+
+func getActivesAndTotal(validators []*pb.ValidatorRecord) ([]*pb.ValidatorRecord, uint64) {
+	actives := make([]*pb.ValidatorRecord, 0, len(validators))
+	total := uint64(0)
+	for _, v := range validators {
+		if v.Status == uint64(params.Active) {
+			actives = append(actives, v)
+			total += v.Balance
+		}
+	}
+
+	return actives, total
+}
+
+func getRewardFn(participatingTotal, total int64, rewardQuotient uint64) func(*pb.ValidatorRecord) {
+	return func(v *pb.ValidatorRecord) {
+		balance := int64(v.Balance)
+		participationProduct := participationProduct(participatingTotal, total)
+		reward := balance / int64(rewardQuotient) * participationProduct
+		v.Balance = uint64(balance + reward)
+	}
+}
+
+func getPenaltyFn(timeSinceFinality, rewardQuotient uint64) func(*pb.ValidatorRecord) {
+	return func(v *pb.ValidatorRecord) {
+		balance := uint64(v.Balance)
+		inactivityPenalty := balance / rewardQuotient
+		finalityPenalty := balance * timeSinceFinality / quadraticPenaltyQuotient()
+		v.Balance = balance - inactivityPenalty - finalityPenalty
+	}
+}
+
+func getRewardQuotient(total uint64) uint64 {
+	return params.GetConfig().BaseRewardQuotient * mathutil.IntegerSquareRoot(total)
+}
+
+func participationProduct(participatingTotal, total int64) int64 {
+	return (2*participatingTotal - total) / total
+}
+
+func calculateRewards(actives []*pb.ValidatorRecord, timeSinceFinality, total, participatingTotal uint64, participatingIndices []uint32) {
+	var rewardFn func(*pb.ValidatorRecord)
+	var penaltyFn func(*pb.ValidatorRecord)
+
+	rewardQuotient := getRewardQuotient(total)
+
+	if timeSinceFinality <= 3*params.GetConfig().CycleLength {
+		rewardFn = getRewardFn(int64(participatingTotal), int64(total), rewardQuotient)
+		penaltyFn = func(v *pb.ValidatorRecord) {
+			balance := int64(v.Balance)
+			penalty := balance / int64(rewardQuotient)
+			v.Balance = uint64(balance - penalty)
+		}
+	} else {
+		rewardFn = func(v *pb.ValidatorRecord) {}
+		penaltyFn = getPenaltyFn(timeSinceFinality, rewardQuotient)
+	}
+
+	updateBalance(actives, participatingIndices, rewardFn, penaltyFn)
+}
+
+func updateBalance(
+	actives []*pb.ValidatorRecord,
+	participatingIndices []uint32,
+	reward func(*pb.ValidatorRecord),
+	penalty func(*pb.ValidatorRecord)) {
+
+	for index, v := range actives {
+		if didParticipate(uint32(index), participatingIndices) {
+			reward(v)
+		} else {
+			penalty(v)
+		}
+	}
+}
+
+func didParticipate(validatorIndex uint32, participatingIndices []uint32) bool {
+	for _, i := range participatingIndices {
+		if validatorIndex == i {
+			return true
+		}
+	}
+	return false
+}
+
+// finalizeAndJustifySlots justifies slots and sets the justified streak according to Casper FFG
+// conditions. It also finalizes slots when the conditions are fulfilled.
+func finalizeAndJustifySlots(cState *pb.CrystallizedState, slot, participatingTotal, total uint64) {
+	// update lastJustifiedSlot
+	if 3*participatingTotal >= 2*total {
+		if slot > cState.LastJustifiedSlot {
+			cState.LastJustifiedSlot = slot
+		}
+		cState.JustifiedStreak++
+	} else {
+		cState.JustifiedStreak = 0
+	}
+
+	// update lastFinalizedSlot
+	cycleLength := params.GetConfig().CycleLength
+	// note: equivalent to justifiedStreak >= cycleLength + 1
+	if cState.JustifiedStreak > cycleLength {
+		newFinalizedSlot := slot - cycleLength - 1
+		if newFinalizedSlot > cState.LastFinalizedSlot {
+			cState.LastFinalizedSlot = newFinalizedSlot
+		}
+	}
+}
+
+// quadraticPenaltyQuotient is the quotient that will be used to apply penalties to offline
+// validators.
+func quadraticPenaltyQuotient() uint64 {
+	dropTimeFactor := params.GetConfig().SqrtExpDropTime / params.GetConfig().SlotDuration
+	return dropTimeFactor * dropTimeFactor
+}
+
+// ProcessSpecialRecords processes the pending special record objects,
+// this is called during crystallized state transition.
+func processSpecialRecords(actives []*pb.ValidatorRecord, pendingSpecials []*pb.SpecialRecord, slotNumber uint64) {
+	// For each special record object in active state.
+	for _, specialRecord := range pendingSpecials {
+		// Covers validators submitted logouts from last cycle.
+		if specialRecord.Kind == uint32(params.Logout) {
+			index := binary.BigEndian.Uint64(specialRecord.Data[0])
+			// TODO(#633): Verify specialRecord.Data[1] as signature. BLSVerify(pubkey=validator.pubkey, msg=hash(LOGOUT_MESSAGE + bytes8(version))
+			exitValidator(actives[index], slotNumber, false)
+		}
+
+		// Covers RANDAO updates for all the validators from last cycle.
+		if specialRecord.Kind == uint32(params.RandaoChange) {
+			index := binary.BigEndian.Uint64(specialRecord.Data[0])
+			actives[index].RandaoCommitment = specialRecord.Data[1]
+		}
+	}
+}
+
+// exitValidatorsBelowMinBalance checks if a validator deposit has fallen below min online deposit size,
+// it exits the validator if it's below.
+func exitValidatorsBelowMinBalance(actives []*pb.ValidatorRecord, slot uint64) {
+	minDepositInGWei := params.GetConfig().MinDeposit * params.GetConfig().Gwei
+
+	for index, validator := range actives {
+		if validator.Balance < minDepositInGWei {
+			actives[index] = exitValidator(validator, slot, false)
+		}
+	}
+}
+
+// exitValidator exits validator from the active list. It returns
+// updated validator record with an appropriate status of each validator.
+func exitValidator(
+	validator *pb.ValidatorRecord,
+	currentSlot uint64,
+	panalize bool) *pb.ValidatorRecord {
+	// TODO(#614): Add validator set change
+	validator.ExitSlot = currentSlot
+	if panalize {
+		validator.Status = uint64(params.Penalized)
+	} else {
+		validator.Status = uint64(params.PendingExit)
+	}
+	return validator
 }

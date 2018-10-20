@@ -1,5 +1,5 @@
 package casper
-
+/*
 import (
 	"bytes"
 	"math/big"
@@ -582,3 +582,4 @@ func TestDeepCopyValidators(t *testing.T) {
 	}
 
 }
+*/

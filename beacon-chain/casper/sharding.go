@@ -9,7 +9,7 @@ import (
 
 // ShuffleValidatorsToCommittees shuffles validator indices and splits them by slot and shard.
 func ShuffleValidatorsToCommittees(seed common.Hash, activeValidators []*pb.ValidatorRecord, crosslinkStartShard uint64) ([]*pb.ShardAndCommitteeArray, error) {
-	indices := ActiveValidatorIndices(activeValidators)
+	indices := activeValidatorIndices(activeValidators)
 
 	// split the shuffled list for slot.
 	shuffledValidators, err := utils.ShuffleIndices(seed, indices)
