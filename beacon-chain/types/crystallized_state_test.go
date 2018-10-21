@@ -193,7 +193,7 @@ func TestNextDeriveCrystallizedSlot(t *testing.T) {
 			Status: uint64(params.Active)},
 	}
 
-	totalDeposits := cState.TotalDeposits()
+	_, total := getActivesAndTotal(cState.Validators())
 	recentShardBlockHashes := make([][]byte, 3*params.GetConfig().CycleLength)
 	voteCache := make(map[[32]byte]*utils.VoteCache)
 	for i := 0; i < 3*int(params.GetConfig().CycleLength); i++ {
@@ -202,7 +202,7 @@ func TestNextDeriveCrystallizedSlot(t *testing.T) {
 		copy(shardBlockHash[:], counter)
 		recentShardBlockHashes[i] = shardBlockHash[:]
 		voteCache[shardBlockHash] = &utils.VoteCache{
-			VoteTotalDeposit: totalDeposits * 3 / 4,
+			VoteTotalDeposit: total * 3 / 4,
 		}
 	}
 

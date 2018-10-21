@@ -282,25 +282,30 @@ func (c *CrystallizedState) CalculateNewState(aState *ActiveState, block *Block)
 	return newState, nil
 }
 
-func (c *CrystallizedState) processBlocks(actives []*pb.ValidatorRecord, aState *ActiveState, totalBalance, cycleStart uint64) error {
+func (c *CrystallizedState) processBlocks(actives []*pb.ValidatorRecord, aState *ActiveState, totalBalance, cycleStart uint64) {
 	for i := uint64(0); i < params.GetConfig().CycleLength; i++ {
 		slot := cycleStart + i
-		blockHash := aState.RecentBlockHashes()[i]
-
 		timeSinceFinality := slot - c.LastFinalizedSlot()
-		// TODO: Handle no cache
-		voteCache, _ := aState.blockVoteCache[blockHash]
-		participatingTotal := voteCache.VoteTotalDeposit
-		participatingIndices := voteCache.VoterIndices
+		participatingIndices, participatingTotal := getParticipantsForSlot(aState, i)
 
 		// TODO: Check if quadraticPenaltyQuotient should be in seconds or slots
 		// TODO: Include penalties when `status == PENALIZED`
 		calculateRewards(actives, timeSinceFinality, totalBalance, participatingTotal, participatingIndices)
 
-		finalizeAndJustifySlots(c.Proto(), slot, participatingTotal, totalBalance)
+		c.finalizeAndJustifySlots(slot, participatingTotal, totalBalance)
+	}
+}
+
+// getParticipantsForSlot returns the validator indices of the validators which participated
+// as well as the total weight of the participating validators.
+func getParticipantsForSlot(aState *ActiveState, hashIndex uint64) ([]uint32, uint64) {
+	blockHash := aState.RecentBlockHashes()[hashIndex]
+	voteCache, ok := aState.blockVoteCache[blockHash]
+	if !ok {
+		return []uint32{}, 0
 	}
 
-	return nil
+	return voteCache.VoterIndices, voteCache.VoteTotalDeposit
 }
 
 // newValidatorSetRecalculations recomputes the validator set.
@@ -472,6 +477,7 @@ func updateBalance(
 }
 
 func didParticipate(validatorIndex uint32, participatingIndices []uint32) bool {
+	// TODO: Store participatingIndices as a bitfield, to avoid iterating through every index.
 	for _, i := range participatingIndices {
 		if validatorIndex == i {
 			return true
@@ -482,24 +488,24 @@ func didParticipate(validatorIndex uint32, participatingIndices []uint32) bool {
 
 // finalizeAndJustifySlots justifies slots and sets the justified streak according to Casper FFG
 // conditions. It also finalizes slots when the conditions are fulfilled.
-func finalizeAndJustifySlots(cState *pb.CrystallizedState, slot, participatingTotal, total uint64) {
+func (c *CrystallizedState) finalizeAndJustifySlots(slot, participatingTotal, total uint64) {
 	// update lastJustifiedSlot
 	if 3*participatingTotal >= 2*total {
-		if slot > cState.LastJustifiedSlot {
-			cState.LastJustifiedSlot = slot
+		if slot > c.data.LastJustifiedSlot {
+			c.data.LastJustifiedSlot = slot
 		}
-		cState.JustifiedStreak++
+		c.data.JustifiedStreak++
 	} else {
-		cState.JustifiedStreak = 0
+		c.data.JustifiedStreak = 0
 	}
 
 	// update lastFinalizedSlot
 	cycleLength := params.GetConfig().CycleLength
 	// note: equivalent to justifiedStreak >= cycleLength + 1
-	if cState.JustifiedStreak > cycleLength {
+	if c.JustifiedStreak() > cycleLength {
 		newFinalizedSlot := slot - cycleLength - 1
-		if newFinalizedSlot > cState.LastFinalizedSlot {
-			cState.LastFinalizedSlot = newFinalizedSlot
+		if newFinalizedSlot > c.LastFinalizedSlot() {
+			c.data.LastFinalizedSlot = newFinalizedSlot
 		}
 	}
 }
@@ -547,10 +553,10 @@ func exitValidatorsBelowMinBalance(actives []*pb.ValidatorRecord, slot uint64) {
 // updated validator record with an appropriate status of each validator.
 func exitValidator(
 	validator *pb.ValidatorRecord,
-	currentSlot uint64,
+	slot uint64,
 	panalize bool) *pb.ValidatorRecord {
 	// TODO(#614): Add validator set change
-	validator.ExitSlot = currentSlot
+	validator.ExitSlot = slot
 	if panalize {
 		validator.Status = uint64(params.Penalized)
 	} else {
