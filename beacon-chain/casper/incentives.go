@@ -1,4 +1,5 @@
 package casper
+
 /*
 import (
 	pb "github.com/prysmaticlabs/prysm/proto/beacon/p2p/v1"
