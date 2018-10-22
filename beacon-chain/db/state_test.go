@@ -1,13 +1,8 @@
 package db
 
 import (
-	"bytes"
 	"reflect"
 	"testing"
-
-	"github.com/prysmaticlabs/prysm/beacon-chain/types"
-	"github.com/prysmaticlabs/prysm/beacon-chain/utils"
-	pb "github.com/prysmaticlabs/prysm/proto/beacon/p2p/v1"
 )
 
 func TestInitializeState(t *testing.T) {
@@ -25,11 +20,13 @@ func TestInitializeState(t *testing.T) {
 		t.Fatalf("Expected block height to equal 1. Got %d", b.SlotNumber())
 	}
 
-	aState, err := db.GetActiveState()
+	aStateRoot := b.ActiveStateRoot()
+	aState, err := db.GetActiveState(aStateRoot[:])
 	if err != nil {
 		t.Fatalf("Failed to get active state: %v", err)
 	}
-	cState, err := db.GetCrystallizedState()
+	cStateRoot := b.CrystallizedStateRoot()
+	cState, err := db.GetCrystallizedState(cStateRoot[:])
 	if err != nil {
 		t.Fatalf("Failed to get crystallized state: %v", err)
 	}
@@ -45,7 +42,7 @@ func TestInitializeState(t *testing.T) {
 		t.Fatalf("Failed t oencode crystallized state: %v", err)
 	}
 
-	aStatePrime, err := db.GetActiveState()
+	aStatePrime, err := db.GetActiveState(aStateRoot[:])
 	if err != nil {
 		t.Fatalf("Failed to get active state: %v", err)
 	}
@@ -54,7 +51,7 @@ func TestInitializeState(t *testing.T) {
 		t.Fatalf("Failed to encode active state: %v", err)
 	}
 
-	cStatePrime, err := db.GetCrystallizedState()
+	cStatePrime, err := db.GetCrystallizedState(cStateRoot[:])
 	if err != nil {
 		t.Fatalf("Failed to get crystallized state: %v", err)
 	}
@@ -63,40 +60,10 @@ func TestInitializeState(t *testing.T) {
 		t.Fatalf("Failed to encode crystallized state: %v", err)
 	}
 
-	if !bytes.Equal(aStateEnc, aStatePrimeEnc) {
+	if !reflect.DeepEqual(aStateEnc, aStatePrimeEnc) {
 		t.Fatalf("Expected %#x and %#x to be equal", aStateEnc, aStatePrimeEnc)
 	}
-	if !bytes.Equal(cStateEnc, cStatePrimeEnc) {
+	if !reflect.DeepEqual(cStateEnc, cStatePrimeEnc) {
 		t.Fatalf("Expected %#x and %#x to be equal", cStateEnc, cStatePrimeEnc)
-	}
-}
-
-func TestGetUnfinalizedBlockState(t *testing.T) {
-	db := setupDB(t)
-	defer teardownDB(t, db)
-	aState := types.NewActiveState(&pb.ActiveState{}, map[[32]byte]*utils.VoteCache{})
-	cState := types.NewCrystallizedState(&pb.CrystallizedState{})
-	if err := db.SaveUnfinalizedBlockState(aState, cState); err != nil {
-		t.Fatalf("Could not save unfinalized block state: %v", err)
-	}
-
-	aStateHash, err := aState.Hash()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cStateHash, err := cState.Hash()
-	if err != nil {
-		t.Fatal(err)
-	}
-	got1, got2, err := db.GetUnfinalizedBlockState(aStateHash, cStateHash)
-	if err != nil {
-		t.Errorf("Unexpected error: wanted nil, received %v", err)
-		return
-	}
-	if !reflect.DeepEqual(got1, aState) {
-		t.Errorf("ActiveState not equal: got = %v, want %v", got1, aState)
-	}
-	if !reflect.DeepEqual(got2, cState) {
-		t.Errorf("CrystallizedState not equal: got = %v, want %v", got2, cState)
 	}
 }

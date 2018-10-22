@@ -15,15 +15,36 @@ import (
 
 // The fields below define the suffix of keys in the db.
 var (
-	attestationBucket = []byte("attestation-bucket")
-	blockBucket       = []byte("block-bucket")
-	mainChainBucket   = []byte("main-chain-bucket")
-	chainInfoBucket   = []byte("chain-info")
+	mainBucket = []byte("main-bucket")
 
-	mainChainHeightKey = []byte("chain-height")
-	aStateLookupKey    = []byte("active-state")
-	cStateLookupKey    = []byte("crystallized-state")
+	blockPrefix         = []byte("b-")
+	aStatePrefix        = []byte("a-")
+	cStatePrefix        = []byte("c-")
+	attestationPrefix   = []byte("x-")
+	blockByHeightPrefix = []byte("h-")
+
+	chainHeightKey = []byte("chain-height")
 )
+
+func blockKey(key []byte) []byte {
+	return append(blockPrefix, key...)
+}
+
+func aStateKey(key []byte) []byte {
+	return append(aStatePrefix, key...)
+}
+
+func cStateKey(key []byte) []byte {
+	return append(cStatePrefix, key...)
+}
+
+func attestationKey(key []byte) []byte {
+	return append(attestationPrefix, key...)
+}
+
+func blockByHeightKey(key []byte) []byte {
+	return append(blockByHeightPrefix, key...)
+}
 
 // encodeSlotNumber encodes a slot number as big endian uint64.
 func encodeSlotNumber(number uint64) []byte {

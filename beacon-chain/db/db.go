@@ -21,12 +21,18 @@ func (db *BeaconDB) Close() error {
 	return db.db.Close()
 }
 
-func (db *BeaconDB) update(fn func(*bolt.Tx) error) error {
-	return db.db.Update(fn)
+func (db *BeaconDB) update(fn func(*bolt.Bucket) error) error {
+	return db.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(mainBucket)
+		return fn(b)
+	})
 }
 
-func (db *BeaconDB) view(fn func(*bolt.Tx) error) error {
-	return db.db.View(fn)
+func (db *BeaconDB) view(fn func(*bolt.Bucket) error) error {
+	return db.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(mainBucket)
+		return fn(b)
+	})
 }
 
 func createBuckets(tx *bolt.Tx, buckets ...[]byte) error {
@@ -52,8 +58,8 @@ func NewDB(dirPath string) (*BeaconDB, error) {
 
 	db := &BeaconDB{db: boltDB}
 
-	db.update(func(tx *bolt.Tx) error {
-		return createBuckets(tx, blockBucket, attestationBucket, mainChainBucket, chainInfoBucket)
+	db.db.Update(func(tx *bolt.Tx) error {
+		return createBuckets(tx, mainBucket)
 	})
 
 	return db, nil

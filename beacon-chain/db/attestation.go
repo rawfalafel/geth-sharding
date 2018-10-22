@@ -17,20 +17,16 @@ func (db *BeaconDB) SaveAttestation(attestation *types.Attestation) error {
 		return err
 	}
 
-	return db.update(func(tx *bolt.Tx) error {
-		a := tx.Bucket(attestationBucket)
-
-		return a.Put(hash[:], encodedState)
+	return db.update(func(b *bolt.Bucket) error {
+		return b.Put(hash[:], encodedState)
 	})
 }
 
 // GetAttestation retrieves an attestation record from the db using its hash.
-func (db *BeaconDB) GetAttestation(hash [32]byte) (*types.Attestation, error) {
+func (db *BeaconDB) GetAttestation(hash []byte) (*types.Attestation, error) {
 	var attestation *types.Attestation
-	err := db.view(func(tx *bolt.Tx) error {
-		a := tx.Bucket(attestationBucket)
-
-		enc := a.Get(hash[:])
+	err := db.view(func(b *bolt.Bucket) error {
+		enc := b.Get(hash)
 		if enc == nil {
 			return nil
 		}
@@ -44,12 +40,10 @@ func (db *BeaconDB) GetAttestation(hash [32]byte) (*types.Attestation, error) {
 }
 
 // HasAttestation checks if the attestation exists.
-func (db *BeaconDB) HasAttestation(hash [32]byte) bool {
+func (db *BeaconDB) HasAttestation(hash []byte) bool {
 	exists := false
-	db.view(func(tx *bolt.Tx) error {
-		a := tx.Bucket(attestationBucket)
-
-		exists = a.Get(hash[:]) != nil
+	db.view(func(b *bolt.Bucket) error {
+		exists = b.Get(hash) != nil
 		return nil
 	})
 	return exists

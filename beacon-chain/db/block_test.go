@@ -1,9 +1,9 @@
 package db
 
 import (
+	"bytes"
 	"testing"
 
-	"github.com/prysmaticlabs/prysm/beacon-chain/params"
 	"github.com/prysmaticlabs/prysm/beacon-chain/types"
 	pb "github.com/prysmaticlabs/prysm/proto/beacon/p2p/v1"
 )
@@ -15,12 +15,12 @@ func TestNilDB(t *testing.T) {
 	b := types.NewBlock(nil)
 	h, _ := b.Hash()
 
-	hasBlock := db.HasBlock(h)
+	hasBlock := db.HasBlock(h[:])
 	if hasBlock {
 		t.Fatal("HashBlock should return false")
 	}
 
-	bPrime, err := db.GetBlock(h)
+	bPrime, err := db.GetBlock(h[:])
 	if err != nil {
 		t.Fatalf("failed to get block: %v", err)
 	}
@@ -29,45 +29,69 @@ func TestNilDB(t *testing.T) {
 	}
 }
 
-func TestSave(t *testing.T) {
+func TestGetChainHead(t *testing.T) {
 	db := setupDB(t)
 	defer teardownDB(t, db)
 
-	b1 := types.NewBlock(nil)
-	h1, _ := b1.Hash()
+	if err := db.InitializeState(nil); err != nil {
+		t.Fatalf("InitializeState failed: %v", err)
+	}
 
-	err := db.SaveBlock(b1)
+	block, err := db.GetChainHead()
 	if err != nil {
-		t.Fatalf("save block failed: %v", err)
+		t.Fatalf("GetChainHead failed: %v", err)
 	}
+	if block == nil {
+		t.Fatal("Expected GetChainHead to return a block")
+	}
+}
 
-	b1Prime, err := db.GetBlock(h1)
+func TestRecordBlock(t *testing.T) {
+	db := setupDB(t)
+	defer teardownDB(t, db)
+
+	aState := types.NewActiveState(&pb.ActiveState{}, nil)
+	aStateHash, err := aState.Hash()
 	if err != nil {
-		t.Fatalf("failed to get block: %v", err)
+		t.Fatalf("Failed to hash active state: %v", err)
 	}
-	h1Prime, _ := b1Prime.Hash()
-
-	if b1Prime == nil || h1 != h1Prime {
-		t.Fatalf("get should return b1: %x", h1)
+	cState := types.NewCrystallizedState(&pb.CrystallizedState{})
+	cStateHash, err := cState.Hash()
+	if err != nil {
+		t.Fatalf("Failed to hash crystallized state: %v", err)
 	}
-
-	b2 := types.NewBlock(&pb.BeaconBlock{
-		Slot: 0,
+	b := types.NewBlock(&pb.BeaconBlock{
+		ActiveStateRoot:       aStateHash[:],
+		CrystallizedStateRoot: cStateHash[:],
 	})
-	h2, _ := b2.Hash()
-
-	err = db.SaveBlock(b2)
+	bHash, err := b.Hash()
 	if err != nil {
-		t.Fatalf("save block failed: %v", err)
+		t.Fatalf("Failed to hash block: %v", err)
 	}
 
-	b2Prime, err := db.GetBlock(h2)
+	err = db.RecordBlock(b, aState, nil)
 	if err != nil {
-		t.Fatalf("failed to get block: %v", err)
+		t.Fatalf("Failed to record block: %v", err)
 	}
-	h2Prime, _ := b2Prime.Hash()
-	if b2Prime == nil || h2 != h2Prime {
-		t.Fatalf("get should return b2: %x", h2)
+
+	bPrime, err := db.GetBlock(bHash[:])
+	if err != nil || bPrime == nil {
+		t.Fatalf("Failed to get block: %v", err)
+	}
+	bEnc, _ := b.Marshal()
+	bPrimeEnc, _ := bPrime.Marshal()
+	if !bytes.Equal(bEnc, bPrimeEnc) {
+		t.Fatalf("Expected %#x and %#x to be qual", bEnc, bPrimeEnc)
+	}
+
+	aStatePrime, err := db.GetActiveState(aStateHash[:])
+	if err != nil || aStatePrime == nil {
+		t.Fatalf("Failed to retrieve active state: %v", err)
+	}
+	aStateEnc, _ := aState.Marshal()
+	aStatePrimeEnc, _ := aStatePrime.Marshal()
+	if !bytes.Equal(aStateEnc, aStatePrimeEnc) {
+		t.Fatalf("Expected %v and %v to be equal", aState, aStatePrime)
 	}
 }
 
@@ -84,25 +108,6 @@ func TestGetBlockBySlotEmptyChain(t *testing.T) {
 	}
 }
 
-func TestUpdateChainHeadNoBlock(t *testing.T) {
-	db := setupDB(t)
-	defer teardownDB(t, db)
-
-	err := db.InitializeState(nil)
-	if err != nil {
-		t.Fatalf("failed to initialize state: %v", err)
-	}
-	aState, err := db.GetActiveState()
-	if err != nil {
-		t.Fatalf("failed to get active state: %v", err)
-	}
-
-	b := types.NewBlock(&pb.BeaconBlock{Slot: 1})
-	if err := db.UpdateChainHead(b, aState, nil); err == nil {
-		t.Fatalf("expected UpdateChainHead to fail if the block does not exist: %v", err)
-	}
-}
-
 func TestUpdateChainHead(t *testing.T) {
 	db := setupDB(t)
 	defer teardownDB(t, db)
@@ -112,123 +117,40 @@ func TestUpdateChainHead(t *testing.T) {
 		t.Fatalf("failed to initialize state: %v", err)
 	}
 
-	b, err := db.GetBlockBySlot(0)
-	if err != nil {
-		t.Fatalf("failed to get genesis block: %v", err)
+	genesis, err := db.GetBlockBySlot(0)
+	if err != nil || genesis == nil {
+		t.Fatalf("Failed to retrieve genesis block: %v", err)
 	}
-	bHash, err := b.Hash()
-	if err != nil {
-		t.Fatalf("failed to get hash of b: %v", err)
-	}
+	genesisHash, _ := genesis.Hash()
 
-	aState, err := db.GetActiveState()
-	if err != nil {
-		t.Fatalf("failed to get active state: %v", err)
-	}
-
-	b2 := types.NewBlock(&pb.BeaconBlock{
-		Slot:           1,
-		AncestorHashes: [][]byte{bHash[:]},
+	aState := types.NewActiveState(&pb.ActiveState{}, nil)
+	aStateHash, _ := aState.Hash()
+	b1 := types.NewBlock(&pb.BeaconBlock{
+		Slot:            1,
+		ActiveStateRoot: aStateHash[:],
+		AncestorHashes:  [][]byte{genesisHash[:]},
 	})
-	b2Hash, err := b2.Hash()
-	if err != nil {
-		t.Fatalf("failed to hash b2: %v", err)
-	}
-	if err := db.SaveBlock(b2); err != nil {
-		t.Fatalf("failed to save block: %v", err)
-	}
-	if err := db.UpdateChainHead(b2, aState, nil); err != nil {
-		t.Fatalf("failed to record the new head of the main chain: %v", err)
+	if err := db.RecordBlock(b1, aState, nil); err != nil {
+		t.Fatalf("Failed to record block: %v", err)
 	}
 
-	b2Prime, err := db.GetBlockBySlot(1)
-	if err != nil {
-		t.Fatalf("failed to retrieve slot 1: %v", err)
+	if err = db.UpdateChainHead(b1); err != nil {
+		t.Fatalf("Failed to update head: %v", err)
 	}
-	b2Sigma, err := db.GetChainHead()
+	b1Prime, err := db.GetChainHead()
 	if err != nil {
-		t.Fatalf("failed to retrieve head: %v", err)
+		t.Fatalf("Failed to get chain head: %v", err)
+	}
+	b1Enc, _ := b1.Marshal()
+	b1PrimeEnc, _ := b1Prime.Marshal()
+	if !bytes.Equal(b1Enc, b1PrimeEnc) {
+		t.Fatalf("Expected %#x and %#x to be equal", b1Enc, b1PrimeEnc)
 	}
 
-	b2PrimeHash, err := b2Prime.Hash()
-	if err != nil {
-		t.Fatalf("failed to hash b2Prime: %v", err)
-	}
-	b2SigmaHash, err := b2Sigma.Hash()
-	if err != nil {
-		t.Fatalf("failed to hash b2Sigma: %v", err)
-	}
-
-	if b2Hash != b2PrimeHash {
-		t.Fatalf("expected %x and %x to be equal", b2Hash, b2PrimeHash)
-	}
-	if b2Hash != b2SigmaHash {
-		t.Fatalf("expected %x and %x to be equal", b2Hash, b2SigmaHash)
-	}
-}
-
-func TestChainProgress(t *testing.T) {
-	db := setupDB(t)
-	defer teardownDB(t, db)
-
-	err := db.InitializeState(nil)
-	if err != nil {
-		t.Fatalf("failed to initialize state: %v", err)
-	}
-
-	aState, err := db.GetActiveState()
-	if err != nil {
-		t.Fatalf("Failed to get active state: %v", err)
-	}
-	cState, err := db.GetCrystallizedState()
-	if err != nil {
-		t.Fatalf("Failed to get crystallized state: %v", err)
-	}
-	cycleLength := params.GetConfig().CycleLength
-
-	b1 := types.NewBlock(&pb.BeaconBlock{Slot: 1})
-	if err := db.SaveBlock(b1); err != nil {
-		t.Fatalf("failed to save block: %v", err)
-	}
-	if err := db.UpdateChainHead(b1, aState, nil); err != nil {
-		t.Fatalf("failed to record the new head: %v", err)
-	}
-	heighestBlock, err := db.GetChainHead()
-	if err != nil {
-		t.Fatalf("failed to get chain head: %v", err)
-	}
-	if heighestBlock.SlotNumber() != b1.SlotNumber() {
-		t.Fatalf("expected height to equal %d, got %d", b1.SlotNumber(), heighestBlock.SlotNumber())
-	}
-
-	b2 := types.NewBlock(&pb.BeaconBlock{Slot: cycleLength})
-	if err := db.SaveBlock(b2); err != nil {
-		t.Fatalf("failed to save block: %v", err)
-	}
-	if err := db.UpdateChainHead(b2, aState, nil); err != nil {
-		t.Fatalf("failed to record the new head: %v", err)
-	}
-	heighestBlock, err = db.GetChainHead()
-	if err != nil {
-		t.Fatalf("failed to get block: %v", err)
-	}
-	if heighestBlock.SlotNumber() != b2.SlotNumber() {
-		t.Fatalf("expected height to equal %d, got %d", b2.SlotNumber(), heighestBlock.SlotNumber())
-	}
-
-	b3 := types.NewBlock(&pb.BeaconBlock{Slot: 3})
-	if err := db.SaveBlock(b3); err != nil {
-		t.Fatalf("failed to save block: %v", err)
-	}
-	if err := db.UpdateChainHead(b3, aState, cState); err != nil {
-		t.Fatalf("failed to update head: %v", err)
-	}
-	heighestBlock, err = db.GetChainHead()
-	if err != nil {
-		t.Fatalf("failed to get chain head: %v", err)
-	}
-	if heighestBlock.SlotNumber() != b3.SlotNumber() {
-		t.Fatalf("expected height to equal %d, got %d", b3.SlotNumber(), heighestBlock.SlotNumber())
+	b1Omega, err := db.GetBlockBySlot(1)
+	b1OmegaEnc, _ := b1Omega.Marshal()
+	if !bytes.Equal(b1Enc, b1OmegaEnc) {
+		t.Fatalf("Expected %#x and %#x to be equal", b1Enc, b1OmegaEnc)
 	}
 }
 
