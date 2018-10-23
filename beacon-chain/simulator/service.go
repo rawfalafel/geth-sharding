@@ -54,8 +54,8 @@ type Config struct {
 type beaconDB interface {
 	GetChainHead() (*types.Block, error)
 	GetGenesisTime() (time.Time, error)
-	GetActiveState() (*types.ActiveState, error)
-	GetCrystallizedState() (*types.CrystallizedState, error)
+	GetActiveState([32]byte) (*types.ActiveState, error)
+	GetCrystallizedState([32]byte) (*types.CrystallizedState, error)
 }
 
 // DefaultConfig options for the simulator.
@@ -107,16 +107,22 @@ func (sim *Simulator) run(slotInterval <-chan uint64, requestChan <-chan p2p.Mes
 	blockReqSub := sim.p2p.Subscribe(&pb.BeaconBlockRequest{}, sim.blockRequestChan)
 	defer blockReqSub.Unsubscribe()
 
-	lastBlock, err := sim.beaconDB.GetChainHead()
+	previousBlock, err := sim.beaconDB.GetChainHead()
 	if err != nil {
 		log.Errorf("Could not fetch latest block: %v", err)
 		return
 	}
-
-	lastHash, err := lastBlock.Hash()
+	previousBlockHash, err := previousBlock.Hash()
 	if err != nil {
 		log.Errorf("Could not get hash of the latest block: %v", err)
 	}
+
+	// previousAState, err := sim.beaconDB.GetActiveState(previousBlock.ActiveStateRoot())
+	// previousAStateHash, err := previousAState.Hash()
+
+	// previousCState, err := sim.beaconDB.GetCrystallizedState(previousBlock.CrystallizedStateRoot())
+	// previousCStateHash, err := previousCState.Hash()
+
 	broadcastedBlocks := map[[32]byte]*types.Block{}
 
 	for {
@@ -125,28 +131,28 @@ func (sim *Simulator) run(slotInterval <-chan uint64, requestChan <-chan p2p.Mes
 			log.Debug("Simulator context closed, exiting goroutine")
 			return
 		case slot := <-slotInterval:
-			aState, err := sim.beaconDB.GetActiveState()
-			if err != nil {
-				log.Errorf("Failed to get active state: %v", err)
-				continue
-			}
-			cState, err := sim.beaconDB.GetCrystallizedState()
-			if err != nil {
-				log.Errorf("Failed to get crystallized state: %v", err)
-				continue
-			}
+			// aState, err := sim.beaconDB.GetActiveState(previousAStateHash)
+			// if err != nil {
+			// 	log.Errorf("Failed to get active state: %v", err)
+			// 	continue
+			// }
+			// cState, err := sim.beaconDB.GetCrystallizedState(previousCStateHash)
+			// if err != nil {
+			// 	log.Errorf("Failed to get crystallized state: %v", err)
+			// 	continue
+			// }
 
-			aStateHash, err := aState.Hash()
-			if err != nil {
-				log.Errorf("Failed to hash active state: %v", err)
-				continue
-			}
+			// aStateHash, err := aState.Hash()
+			// if err != nil {
+			// 	log.Errorf("Failed to hash active state: %v", err)
+			// 	continue
+			// }
 
-			cStateHash, err := cState.Hash()
-			if err != nil {
-				log.Errorf("Failed to hash crystallized state: %v", err)
-				continue
-			}
+			// cStateHash, err := cState.Hash()
+			// if err != nil {
+			// 	log.Errorf("Failed to hash crystallized state: %v", err)
+			// 	continue
+			// }
 
 			var powChainRef []byte
 			if sim.enablePOWChain {
@@ -156,13 +162,13 @@ func (sim *Simulator) run(slotInterval <-chan uint64, requestChan <-chan p2p.Mes
 			}
 
 			parentHash := make([]byte, 32)
-			copy(parentHash, lastHash[:])
+			copy(parentHash, previousBlockHash[:])
 			block := types.NewBlock(&pb.BeaconBlock{
 				Slot:                  slot,
 				Timestamp:             ptypes.TimestampNow(),
 				PowChainRef:           powChainRef,
-				ActiveStateRoot:       aStateHash[:],
-				CrystallizedStateRoot: cStateHash[:],
+				ActiveStateRoot:       make([]byte, 32),
+				CrystallizedStateRoot: make([]byte, 32),
 				AncestorHashes:        [][]byte{parentHash},
 				RandaoReveal:          params.GetConfig().SimulatedBlockRandao[:],
 				Attestations: []*pb.AggregatedAttestation{
@@ -185,7 +191,8 @@ func (sim *Simulator) run(slotInterval <-chan uint64, requestChan <-chan p2p.Mes
 			}).Debug("Broadcast block hash")
 
 			broadcastedBlocks[hash] = block
-			lastHash = hash
+			previousBlockHash = hash
+
 		case msg := <-requestChan:
 			data := msg.Data.(*pb.BeaconBlockRequest)
 			var hash [32]byte

@@ -63,10 +63,10 @@ func (db *BeaconDB) InitializeState(genesisValidators []*pb.ValidatorRecord) err
 
 // GetActiveState fetches ActiveState for the given hash.
 // Returns nil if the state does not exist.
-func (db *BeaconDB) GetActiveState(hash []byte) (*types.ActiveState, error) {
+func (db *BeaconDB) GetActiveState(hash [32]byte) (*types.ActiveState, error) {
 	var aState *types.ActiveState
 	err := db.view(func(b *bolt.Bucket) error {
-		enc := b.Get(aStateKey(hash))
+		enc := b.Get(aStateKey(hash[:]))
 		if enc == nil {
 			return nil
 		}
@@ -81,10 +81,10 @@ func (db *BeaconDB) GetActiveState(hash []byte) (*types.ActiveState, error) {
 
 // GetCrystallizedState fetches CrystallizedState for the given hash.
 // Returns nil if the state does not exist.
-func (db *BeaconDB) GetCrystallizedState(hash []byte) (*types.CrystallizedState, error) {
+func (db *BeaconDB) GetCrystallizedState(hash [32]byte) (*types.CrystallizedState, error) {
 	var cState *types.CrystallizedState
 	err := db.view(func(b *bolt.Bucket) error {
-		enc := b.Get(cStateKey(hash))
+		enc := b.Get(cStateKey(hash[:]))
 		if enc == nil {
 			return nil
 		}

@@ -128,10 +128,13 @@ func TestProcessBlock(t *testing.T) {
 		exitRoutine <- true
 	}()
 
+	aState := types.NewGenesisActiveState()
+	aStateHash, _ := aState.Hash()
 	parentBlock := types.NewBlock(&pb.BeaconBlock{
 		Slot: 0,
+		ActiveStateRoot: aStateHash[:],
 	})
-	if err := db.SaveBlock(parentBlock); err != nil {
+	if err := db.RecordBlock(parentBlock, aState, nil); err != nil {
 		t.Fatalf("failed to save block: %v", err)
 	}
 	parentHash, err := parentBlock.Hash()
@@ -196,10 +199,13 @@ func TestProcessMultipleBlocks(t *testing.T) {
 		exitRoutine <- true
 	}()
 
+	aState := types.NewGenesisActiveState()
+	aStateHash, _ := aState.Hash()
 	parentBlock := types.NewBlock(&pb.BeaconBlock{
 		Slot: 0,
+		ActiveStateRoot: aStateHash[:],
 	})
-	if err := db.SaveBlock(parentBlock); err != nil {
+	if err := db.RecordBlock(parentBlock, aState, nil); err != nil {
 		t.Fatalf("failed to save block: %v", err)
 	}
 	parentHash, err := parentBlock.Hash()

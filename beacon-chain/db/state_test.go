@@ -21,12 +21,12 @@ func TestInitializeState(t *testing.T) {
 	}
 
 	aStateRoot := b.ActiveStateRoot()
-	aState, err := db.GetActiveState(aStateRoot[:])
+	aState, err := db.GetActiveState(aStateRoot)
 	if err != nil {
 		t.Fatalf("Failed to get active state: %v", err)
 	}
 	cStateRoot := b.CrystallizedStateRoot()
-	cState, err := db.GetCrystallizedState(cStateRoot[:])
+	cState, err := db.GetCrystallizedState(cStateRoot)
 	if err != nil {
 		t.Fatalf("Failed to get crystallized state: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestInitializeState(t *testing.T) {
 		t.Fatalf("Failed t oencode crystallized state: %v", err)
 	}
 
-	aStatePrime, err := db.GetActiveState(aStateRoot[:])
+	aStatePrime, err := db.GetActiveState(aStateRoot)
 	if err != nil {
 		t.Fatalf("Failed to get active state: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestInitializeState(t *testing.T) {
 		t.Fatalf("Failed to encode active state: %v", err)
 	}
 
-	cStatePrime, err := db.GetCrystallizedState(cStateRoot[:])
+	cStatePrime, err := db.GetCrystallizedState(cStateRoot)
 	if err != nil {
 		t.Fatalf("Failed to get crystallized state: %v", err)
 	}

@@ -41,7 +41,7 @@ func (ms *mockSyncService) IsSyncedWithNetwork() bool {
 
 type mockDB struct{}
 
-func (m *mockDB) SaveBlock(*types.Block) error {
+func (m *mockDB) RecordBlock(*types.Block, *types.ActiveState, *types.CrystallizedState) error {
 	return nil
 }
 

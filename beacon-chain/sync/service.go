@@ -26,7 +26,7 @@ type attestationService interface {
 }
 
 type beaconDB interface {
-	GetCrystallizedState() (*types.CrystallizedState, error)
+	GetCrystallizedState([32]byte) (*types.CrystallizedState, error)
 	GetBlock([32]byte) (*types.Block, error)
 	HasBlock([32]byte) bool
 	GetAttestation([32]byte) (*types.Attestation, error)
@@ -210,7 +210,13 @@ func (ss *Service) receiveBlock(msg p2p.Message) {
 		return
 	}
 
-	cState, err := ss.db.GetCrystallizedState()
+	parentBlock, err := ss.db.GetBlock(block.ParentHash())
+	if err != nil {
+		log.Errorf("Failed to get the parent block: %v", err)
+		return
+	}
+
+	cState, err := ss.db.GetCrystallizedState(parentBlock.CrystallizedStateRoot())
 	if err != nil {
 		log.Errorf("Failed to get crystallized state: %v", err)
 		return

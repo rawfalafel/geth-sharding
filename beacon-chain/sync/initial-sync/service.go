@@ -56,7 +56,7 @@ type p2pAPI interface {
 }
 
 type beaconDB interface {
-	SaveBlock(*types.Block) error
+	RecordBlock(*types.Block, *types.ActiveState, *types.CrystallizedState) error
 }
 
 // SyncService is the interface for the Sync service.
@@ -261,5 +261,6 @@ func (s *InitialSync) validateAndSaveNextBlock(data *pb.BeaconBlockResponse) err
 
 // writeBlockToDB saves the corresponding block to the local DB.
 func (s *InitialSync) writeBlockToDB(block *types.Block) error {
-	return s.db.SaveBlock(block)
+	// TODO: Modify initial sync to process state
+	return s.db.RecordBlock(block, nil, nil)
 }

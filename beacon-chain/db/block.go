@@ -28,10 +28,10 @@ func createBlock(enc []byte) (*types.Block, error) {
 
 // GetBlock accepts a block hash and returns the corresponding block.
 // Returns nil if the block does not exist.
-func (db *BeaconDB) GetBlock(hash []byte) (*types.Block, error) {
+func (db *BeaconDB) GetBlock(hash [32]byte) (*types.Block, error) {
 	var block *types.Block
 	err := db.view(func(b *bolt.Bucket) error {
-		enc := b.Get(blockKey(hash))
+		enc := b.Get(blockKey(hash[:]))
 		if enc == nil {
 			return nil
 		}
@@ -45,10 +45,10 @@ func (db *BeaconDB) GetBlock(hash []byte) (*types.Block, error) {
 }
 
 // HasBlock accepts a block hash and returns true if the block does not exist.
-func (db *BeaconDB) HasBlock(hash []byte) bool {
+func (db *BeaconDB) HasBlock(hash [32]byte) bool {
 	hasBlock := false
 	_ = db.view(func(b *bolt.Bucket) error {
-		hasBlock = b.Get(hash) != nil
+		hasBlock = b.Get(hash[:]) != nil
 
 		return nil
 	})
@@ -85,6 +85,8 @@ func (db *BeaconDB) GetChainHead() (*types.Block, error) {
 	return block, err
 }
 
+// UpdateChainHead updates the given block as the head of the main chain.
+// Assumes that the block has already been saved to the database.
 func (db *BeaconDB) UpdateChainHead(block *types.Block) error {
 	blockhash, err := block.Hash()
 	if err != nil {

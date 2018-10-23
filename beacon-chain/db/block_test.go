@@ -15,12 +15,12 @@ func TestNilDB(t *testing.T) {
 	b := types.NewBlock(nil)
 	h, _ := b.Hash()
 
-	hasBlock := db.HasBlock(h[:])
+	hasBlock := db.HasBlock(h)
 	if hasBlock {
 		t.Fatal("HashBlock should return false")
 	}
 
-	bPrime, err := db.GetBlock(h[:])
+	bPrime, err := db.GetBlock(h)
 	if err != nil {
 		t.Fatalf("failed to get block: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestRecordBlock(t *testing.T) {
 		t.Fatalf("Failed to record block: %v", err)
 	}
 
-	bPrime, err := db.GetBlock(bHash[:])
+	bPrime, err := db.GetBlock(bHash)
 	if err != nil || bPrime == nil {
 		t.Fatalf("Failed to get block: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestRecordBlock(t *testing.T) {
 		t.Fatalf("Expected %#x and %#x to be qual", bEnc, bPrimeEnc)
 	}
 
-	aStatePrime, err := db.GetActiveState(aStateHash[:])
+	aStatePrime, err := db.GetActiveState(aStateHash)
 	if err != nil || aStatePrime == nil {
 		t.Fatalf("Failed to retrieve active state: %v", err)
 	}

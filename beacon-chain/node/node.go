@@ -158,12 +158,12 @@ func (b *BeaconNode) startDB(ctx *cli.Context) error {
 		return err
 	}
 
-	cState, err := db.GetCrystallizedState()
+	block, err := db.GetChainHead()
 	if err != nil {
 		return err
 	}
 	// Ensure that state has been initialized.
-	if cState == nil {
+	if block == nil || err != nil {
 		var genesisValidators []*pb.ValidatorRecord
 		if genesisJSON != "" {
 			log.Infof("Initializing Crystallized State from %s", genesisJSON)

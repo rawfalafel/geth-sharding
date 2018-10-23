@@ -139,10 +139,6 @@ func TestRunningChainServiceFaultyPOWChain(t *testing.T) {
 		<-exitRoutine
 	}()
 
-	if err := chainService.beaconDB.SaveBlock(block); err != nil {
-		t.Fatal(err)
-	}
-
 	chainService.incomingBlockChan <- block
 	chainService.cancel()
 	exitRoutine <- true
@@ -167,7 +163,7 @@ func TestRunningChainService(t *testing.T) {
 	crystallizedStateRoot, _ := crystallized.Hash()
 
 	genesis := types.NewGenesisBlock([32]byte{}, [32]byte{})
-	chainService.beaconDB.SaveBlock(genesis)
+	chainService.beaconDB.RecordBlock(genesis, active, crystallized)
 	parentHash, err := genesis.Hash()
 	if err != nil {
 		t.Fatalf("unable to get hash of canonical head: %v", err)
@@ -204,7 +200,7 @@ func TestRunningChainService(t *testing.T) {
 		<-exitRoutine
 	}()
 
-	if err := chainService.beaconDB.SaveBlock(block); err != nil {
+	if err := chainService.beaconDB.RecordBlock(block, active, crystallized); err != nil {
 		t.Fatal(err)
 	}
 
@@ -264,7 +260,7 @@ func TestProcessBlocksWithCorrectAttestations(t *testing.T) {
 	block0 := types.NewBlock(&pb.BeaconBlock{
 		Slot: 0,
 	})
-	if saveErr := chainService.beaconDB.SaveBlock(block0); saveErr != nil {
+	if saveErr := chainService.beaconDB.RecordBlock(block0, active, crystallized); saveErr != nil {
 		t.Fatalf("Cannot save block: %v", saveErr)
 	}
 	block0Hash, err := block0.Hash()
@@ -445,7 +441,7 @@ func TestUpdateHead(t *testing.T) {
 			<-exitRoutine
 		}()
 
-		if err := chainService.beaconDB.SaveBlock(block); err != nil {
+		if err := chainService.beaconDB.RecordBlock(block, tt.aState, nil); err != nil {
 			t.Fatal(err)
 		}
 		chainService.unfinalizedBlocks[h] = &statePair{

@@ -29,7 +29,7 @@ type beaconDB interface {
 	// to fetch canonical head and state.
 	GetChainHead() (*types.Block, error)
 	GetBlockBySlot(uint64) (*types.Block, error)
-	GetCrystallizedState() (*types.CrystallizedState, error)
+	GetCrystallizedState([32]byte) (*types.CrystallizedState, error)
 }
 
 type chainService interface {

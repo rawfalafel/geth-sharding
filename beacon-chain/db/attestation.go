@@ -23,10 +23,10 @@ func (db *BeaconDB) SaveAttestation(attestation *types.Attestation) error {
 }
 
 // GetAttestation retrieves an attestation record from the db using its hash.
-func (db *BeaconDB) GetAttestation(hash []byte) (*types.Attestation, error) {
+func (db *BeaconDB) GetAttestation(hash [32]byte) (*types.Attestation, error) {
 	var attestation *types.Attestation
 	err := db.view(func(b *bolt.Bucket) error {
-		enc := b.Get(hash)
+		enc := b.Get(hash[:])
 		if enc == nil {
 			return nil
 		}

@@ -22,7 +22,7 @@ func TestSaveAndRetrieveAttestation(t *testing.T) {
 	}
 
 	aHash := a.Key()
-	aPrime, err := db.GetAttestation(aHash[:])
+	aPrime, err := db.GetAttestation(aHash)
 	if err != nil {
 		t.Fatalf("Failed to call GetAttestation: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestGetNilAttestation(t *testing.T) {
 	db := setupDB(t)
 	defer teardownDB(t, db)
 
-	nilHash := []byte{}
+	nilHash := [32]byte{}
 	a, err := db.GetAttestation(nilHash)
 	if err != nil {
 		t.Fatalf("Failed to retrieve nilHash: %v", err)

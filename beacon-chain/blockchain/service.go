@@ -155,7 +155,9 @@ func (c *ChainService) updateHead(processedBlock <-chan *types.Block) {
 				log.Errorf("Could not get current chain head: %v", err)
 				continue
 			}
-			currentcState, err := c.beaconDB.GetCrystallizedState()
+
+			cStateHash := currentHead.CrystallizedStateRoot()
+			currentcState, err := c.beaconDB.GetCrystallizedState(cStateHash)
 			if err != nil {
 				log.Errorf("Could not get current crystallized state: %v", err)
 				continue
@@ -195,11 +197,7 @@ func (c *ChainService) updateHead(processedBlock <-chan *types.Block) {
 			}
 
 			// TODO(#674): Handle chain reorgs.
-			var newCState *types.CrystallizedState
-			if c.unfinalizedBlocks[h].cycleTransition {
-				newCState = blockcState
-			}
-			if err := c.beaconDB.UpdateChainHead(newHead, c.unfinalizedBlocks[h].activeState, newCState); err != nil {
+			if err := c.beaconDB.UpdateChainHead(newHead); err != nil {
 				log.Errorf("Failed to update chain: %v", err)
 				continue
 			}
@@ -237,7 +235,8 @@ func (c *ChainService) blockProcessing(processedBlock chan<- *types.Block) {
 				continue
 			}
 
-			parent, err := c.beaconDB.GetBlock(block.ParentHash())
+			parentHash := block.ParentHash()
+			parent, err := c.beaconDB.GetBlock(parentHash)
 			if err != nil {
 				log.Errorf("Could not get parent block: %v", err)
 				continue
@@ -247,11 +246,13 @@ func (c *ChainService) blockProcessing(processedBlock chan<- *types.Block) {
 				continue
 			}
 
-			aState, err := c.beaconDB.GetActiveState()
+			aStateHash := parent.ActiveStateRoot()
+			aState, err := c.beaconDB.GetActiveState(aStateHash)
 			if err != nil {
 				log.Errorf("Failed to get active state: %v", err)
 			}
-			cState, err := c.beaconDB.GetCrystallizedState()
+			cStateHash := parent.CrystallizedStateRoot()
+			cState, err := c.beaconDB.GetCrystallizedState(cStateHash)
 			if err != nil {
 				log.Errorf("Failed to get crystallized state: %v", err)
 			}
@@ -295,12 +296,12 @@ func (c *ChainService) blockProcessing(processedBlock chan<- *types.Block) {
 				log.Errorf("Compute active state failed: %v", err)
 			}
 
-			if err := c.beaconDB.SaveBlock(block); err != nil {
-				log.Errorf("Failed to save block: %v", err)
-				continue
+			// Do not save the crystallized state if not a cycle transition.
+			if !didCycleTransition {
+				cState = nil
 			}
-			if err := c.beaconDB.SaveUnfinalizedBlockState(aState, cState); err != nil {
-				log.Errorf("Error persisting unfinalized block's state: %v", err)
+			if err := c.beaconDB.RecordBlock(block, aState, cState); err != nil {
+				log.Errorf("Failed to record block: %v", err)
 				continue
 			}
 
