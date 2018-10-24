@@ -197,7 +197,7 @@ func TestRunningChainService(t *testing.T) {
 		AncestorHashes: [][]byte{{}},
 	})
 
-	blockChan := make(chan *types.Block)
+	blockChan := make(chan *types.Block, 5)
 	exitRoutine := make(chan bool)
 	go func() {
 		chainService.blockProcessing(blockChan)
@@ -294,12 +294,19 @@ func TestProcessBlocksWithCorrectAttestations(t *testing.T) {
 		<-exitRoutine
 	}()
 
-	chainService.incomingBlockChan <- block1
-	block1Returned := <-blockChan
+	exitBlockChainRoutine := make(chan bool)
+	go func() {
+		for {
+			select {
+			case <-blockChan:
+				continue
+			case <-exitBlockChainRoutine:
+				return
+			}
+		}
+	}()
 
-	if block1 != block1Returned {
-		t.Fatalf("expected %v and %v to be the same", block1, block1Returned)
-	}
+	chainService.incomingBlockChan <- block1
 
 	block1Hash, err := block1.Hash()
 	if err != nil {
@@ -354,14 +361,12 @@ func TestProcessBlocksWithCorrectAttestations(t *testing.T) {
 		}})
 
 	chainService.incomingBlockChan <- block1
-	<-blockChan
 	chainService.incomingBlockChan <- block2
-	<-blockChan
 	chainService.incomingBlockChan <- block3
-	<-blockChan
 
 	chainService.cancel()
 	exitRoutine <- true
+	exitBlockChainRoutine <- true
 }
 
 func TestUpdateHead(t *testing.T) {
@@ -439,7 +444,7 @@ func TestUpdateHead(t *testing.T) {
 		}
 
 		exitRoutine := make(chan bool)
-		blockChan := make(chan *types.Block)
+		blockChan := make(chan *types.Block, 5)
 		go func() {
 			chainService.updateHead(blockChan)
 			<-exitRoutine
