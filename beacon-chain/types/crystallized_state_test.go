@@ -148,7 +148,7 @@ func TestInitialDeriveCrystallizedState(t *testing.T) {
 	binary.BigEndian.PutUint64(validator9Index, 9)
 	aState.data.PendingSpecials = []*pb.SpecialRecord{{Kind: uint32(params.RandaoChange), Data: [][]byte{validator9Index, {byte('A')}}}}
 
-	newCState, err := cState.NewStateRecalculations(aState, block, false, false)
+	newCState, err := cState.NewStateRecalculations(aState, block)
 	if err != nil {
 		t.Fatalf("failed to derive new crystallized state: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestNextDeriveCrystallizedSlot(t *testing.T) {
 	aState := NewGenesisActiveState()
 	block := NewBlock(nil)
 
-	cState, err = cState.NewStateRecalculations(aState, block, false, false)
+	cState, err = cState.NewStateRecalculations(aState, block)
 	if err != nil {
 		t.Fatalf("failed to derive next crystallized state: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestNextDeriveCrystallizedSlot(t *testing.T) {
 		RecentBlockHashes: recentShardBlockHashes,
 	}, voteCache)
 
-	cState, err = cState.NewStateRecalculations(aState, block, false, false)
+	cState, err = cState.NewStateRecalculations(aState, block)
 	if err != nil {
 		t.Fatalf("failed to derive crystallized state: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestNextDeriveCrystallizedSlot(t *testing.T) {
 		t.Fatalf("expected finalized slot to equal %d: got %d", 0, cState.LastFinalizedSlot())
 	}
 
-	cState, err = cState.NewStateRecalculations(aState, block, false, false)
+	cState, err = cState.NewStateRecalculations(aState, block)
 	if err != nil {
 		t.Fatalf("failed to derive crystallized state: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestNextDeriveCrystallizedSlot(t *testing.T) {
 		t.Fatalf("expected finalized slot to equal %d: got %d", params.GetConfig().CycleLength-2, cState.LastFinalizedSlot())
 	}
 
-	cState, err = cState.NewStateRecalculations(aState, block, true, true)
+	cState, err = cState.NewStateRecalculations(aState, block)
 	if err != nil {
 		t.Fatalf("failed to derive crystallized state: %v", err)
 	}
@@ -255,10 +255,10 @@ func TestNextDeriveCrystallizedSlot(t *testing.T) {
 		t.Fatalf("expected justified slot to equal %d: got %d", 3*params.GetConfig().CycleLength-1, cState.LastJustifiedSlot())
 	}
 	if cState.JustifiedStreak() != 3*params.GetConfig().CycleLength {
-		t.Fatalf("expected justified streak to equal %d: got %d", 0, cState.JustifiedStreak())
+		t.Fatalf("expected justified streak to equal %d: got %d", 3*params.GetConfig().CycleLength, cState.JustifiedStreak())
 	}
 	if cState.LastFinalizedSlot() != 2*params.GetConfig().CycleLength-2 {
-		t.Fatalf("expected finalized slot to equal %d: got %d", params.GetConfig().CycleLength-2, cState.LastFinalizedSlot())
+		t.Fatalf("expected finalized slot to equal %d: got %d", 2*params.GetConfig().CycleLength-2, cState.LastFinalizedSlot())
 	}
 }
 
@@ -305,7 +305,7 @@ func TestProcessCrosslinks(t *testing.T) {
 		Validators:                 validators,
 		ShardAndCommitteesForSlots: shardAndCommitteesForSlots,
 	})
-	newCrosslinks, err := cState.processCrosslinks(pAttestations, 50, cState.Validators(), 100)
+	newCrosslinks, err := cState.processCrosslinks(pAttestations, cState.Validators(), 100)
 	if err != nil {
 		t.Fatalf("process crosslink failed %v", err)
 	}
@@ -411,27 +411,27 @@ func TestNewValidatorSetRecalculations(t *testing.T) {
 	}
 }
 
-func TestPenalizedETH(t *testing.T) {
-	cState, err := NewGenesisCrystallizedState(nil)
-	if err != nil {
-		t.Fatalf("Failed to initialize crystallized state: %v", err)
-	}
-	cState.data.DepositsPenalizedInPeriod = []uint32{100, 200, 300, 400, 500}
-	cState.penalizedETH(2)
+// func TestPenalizedETH(t *testing.T) {
+// 	cState, err := NewGenesisCrystallizedState(nil)
+// 	if err != nil {
+// 		t.Fatalf("Failed to initialize crystallized state: %v", err)
+// 	}
+// 	cState.data.DepositsPenalizedInPeriod = []uint32{100, 200, 300, 400, 500}
+// 	cState.penalizedETH(2)
 
-	tests := []struct {
-		a uint64
-		b uint64
-	}{
-		{a: 0, b: 100},
-		{a: 1, b: 300},
-		{a: 2, b: 600},
-		{a: 3, b: 900},
-		{a: 4, b: 1200},
-	}
-	for _, tt := range tests {
-		if cState.penalizedETH(tt.a) != tt.b {
-			t.Errorf("PenalizedETH(%d) = %v, want = %d", tt.a, cState.penalizedETH(tt.a), tt.b)
-		}
-	}
-}
+// 	tests := []struct {
+// 		a uint64
+// 		b uint64
+// 	}{
+// 		{a: 0, b: 100},
+// 		{a: 1, b: 300},
+// 		{a: 2, b: 600},
+// 		{a: 3, b: 900},
+// 		{a: 4, b: 1200},
+// 	}
+// 	for _, tt := range tests {
+// 		if cState.penalizedETH(tt.a) != tt.b {
+// 			t.Errorf("PenalizedETH(%d) = %v, want = %d", tt.a, cState.penalizedETH(tt.a), tt.b)
+// 		}
+// 	}
+// }

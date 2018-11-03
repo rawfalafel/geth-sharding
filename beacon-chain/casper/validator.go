@@ -77,7 +77,7 @@ func GetShardAndCommitteesForSlot(shardCommittees []*pb.ShardAndCommitteeArray, 
 func AreAttesterBitfieldsValid(attestation *pb.AggregatedAttestation, attesterIndices []uint32) bool {
 	// Validate attester bit field has the correct length.
 	if bitutil.BitLength(len(attesterIndices)) != len(attestation.AttesterBitfield) {
-		log.Debugf("Attestation has incorrect bitfield length. Found %v, expected %v",
+		log.Errorf("Attestation has incorrect bitfield length. Found %v, expected %v",
 			len(attestation.AttesterBitfield), bitutil.BitLength(len(attesterIndices)))
 		return false
 	}
@@ -85,7 +85,7 @@ func AreAttesterBitfieldsValid(attestation *pb.AggregatedAttestation, attesterIn
 	// Valid attestation can not have non-zero trailing bits.
 	lastBit := len(attesterIndices)
 	remainingBits := lastBit % bitsInByte
-	if remainingBits == 0 {
+	if lastBit < int(params.GetConfig().MinCommiteeSize) || remainingBits == 0 {
 		return true
 	}
 

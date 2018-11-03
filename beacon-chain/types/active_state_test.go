@@ -56,7 +56,7 @@ func TestCopyActiveState(t *testing.T) {
 			Shard: 1,
 		},
 	}
-	aState1.data.PendingAttestations = aState1.appendNewAttestations(newAttestations)
+	aState1.data.PendingAttestations = append(aState1.data.PendingAttestations, newAttestations...)
 	if len(aState1.data.PendingAttestations) == len(aState2.data.PendingAttestations) {
 		t.Fatalf("The PendingAttestations should not equal each other %d, %d",
 			len(aState1.data.PendingAttestations),
@@ -131,12 +131,12 @@ func TestUpdateAttestations(t *testing.T) {
 		},
 	}
 
-	updatedAttestations := aState.appendNewAttestations(newAttestations)
+	updatedAttestations := append(aState.data.PendingAttestations, newAttestations...)
 	if len(updatedAttestations) != 2 {
 		t.Fatalf("Updated attestations should be length 2: %d", len(updatedAttestations))
 	}
 }
-
+/*
 func TestUpdateAttestationsAfterRecalc(t *testing.T) {
 	aState := NewActiveState(&pb.ActiveState{
 		PendingAttestations: []*pb.AggregatedAttestation{
@@ -162,14 +162,12 @@ func TestUpdateAttestationsAfterRecalc(t *testing.T) {
 		},
 	}
 
-	updatedAttestations := aState.appendNewAttestations(newAttestations)
-	aState.data.PendingAttestations = updatedAttestations
-	updatedAttestations = aState.cleanUpAttestations(8)
-	if len(updatedAttestations) != 2 {
-		t.Fatalf("Updated attestations should be length 2: %d", len(updatedAttestations))
+	aState.updateAttestations(8, newAttestations)
+	if len(aState.PendingAttestations()) != 2 {
+		t.Fatalf("Updated attestations should be length 2: %d", len(aState.PendingAttestations()))
 	}
 }
-
+*/
 func TestUpdateRecentBlockHashes(t *testing.T) {
 	block := NewBlock(&pb.BeaconBlock{
 		Slot:           10,
@@ -328,7 +326,7 @@ func TestCalculateNewActiveState(t *testing.T) {
 		RecentBlockHashes: recentBlockHashes,
 	}, nil)
 
-	aState, err = aState.CalculateNewActiveState(block, cState, 0, false)
+	aState, err = aState.CalculateNewActiveState(block, cState, 0)
 	if err != nil {
 		t.Fatalf("failed to calculate new active state: %v", err)
 	}
@@ -341,7 +339,7 @@ func TestCalculateNewActiveState(t *testing.T) {
 		t.Fatalf("incorrect number of items in RecentBlockHashes: %d", len(aState.RecentBlockHashes()))
 	}
 
-	aState, err = aState.CalculateNewActiveState(block, cState, 0, true)
+	aState, err = aState.CalculateNewActiveState(block, cState, 0)
 	if err != nil {
 		t.Fatalf("failed to calculate new active state: %v", err)
 	}
@@ -404,7 +402,7 @@ func TestGetSignedParentHashes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to getSignedParentHashes: %v", err)
 	}
-	if hashes[0][0] != 'B' || hashes[1][0] != 'C' {
+	if hashes[0][0] != 'A' || hashes[1][0] != 'B' {
 		t.Fatalf("getSignedParentHashes did not return expected value: %#x and %#x", hashes[0], hashes[1])
 	}
 	if hashes[2][0] != 0 || hashes[3][0] != 1 {
@@ -446,7 +444,7 @@ func TestGetSignedParentHashesIndexFail(t *testing.T) {
 
 	a2 := &pb.AggregatedAttestation{
 		ObliqueParentHashes: [][]byte{},
-		Slot:                8,
+		Slot:                9,
 	}
 	_, err = aState.getSignedParentHashes(b, a2)
 	if err == nil {

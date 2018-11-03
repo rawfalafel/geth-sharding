@@ -227,6 +227,7 @@ func (c *CrystallizedState) isValidatorSetChange(slotNumber uint64) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -253,7 +254,7 @@ func (c *CrystallizedState) getAttesterIndices(attestation *pb.AggregatedAttesta
 // NewStateRecalculations computes the new crystallized state, given the previous crystallized state
 // and the current active state. This method is called during a cycle transition.
 // We also check for validator set change transition and compute for new committees if necessary during this transition.
-func (c *CrystallizedState) NewStateRecalculations(aState *ActiveState, block *Block, enableCrossLinks bool, enableRewardChecking bool) (*CrystallizedState, error) {
+func (c *CrystallizedState) NewStateRecalculations(aState *ActiveState, block *Block) (*CrystallizedState, error) {
 	var lastStateRecalculationSlotCycleBack uint64
 	var err error
 
@@ -266,16 +267,13 @@ func (c *CrystallizedState) NewStateRecalculations(aState *ActiveState, block *B
 	recentBlockHashes := aState.RecentBlockHashes()
 	newState.data.Validators = casper.CopyValidators(newState.Validators())
 
+	log.Info("committees")
+	printCommittee(newState.data.ShardAndCommitteesForSlots)
+
 	if c.LastStateRecalculationSlot() < params.GetConfig().CycleLength {
 		lastStateRecalculationSlotCycleBack = 0
 	} else {
 		lastStateRecalculationSlotCycleBack = c.LastStateRecalculationSlot() - params.GetConfig().CycleLength
-	}
-
-	// If reward checking is disabled, the new set of validators for the cycle
-	// will remain the same.
-	if !enableRewardChecking {
-		newState.data.Validators = c.Validators()
 	}
 
 	// walk through all the slots from LastStateRecalculationSlot - cycleLength to LastStateRecalculationSlot - 1.
@@ -286,23 +284,26 @@ func (c *CrystallizedState) NewStateRecalculations(aState *ActiveState, block *B
 		blockHash := recentBlockHashes[i]
 
 		blockVoteBalance, newState.data.Validators = casper.TallyVoteBalances(blockHash, slot,
-			blockVoteCache, newState.Validators(), timeSinceFinality, enableRewardChecking)
+			blockVoteCache, newState.data.Validators, timeSinceFinality)
 
 		justifiedSlot, finalizedSlot, justifiedStreak = casper.FinalizeAndJustifySlots(slot, justifiedSlot, finalizedSlot,
 			justifiedStreak, blockVoteBalance, c.TotalDeposits())
 
-		if enableCrossLinks {
-			newState.data.Crosslinks, err = newState.processCrosslinks(aState.PendingAttestations(), slot, newState.Validators(), block.SlotNumber())
-			if err != nil {
-				return nil, err
-			}
-		}
+	}
+
+	newState.data.Crosslinks, err = newState.processCrosslinks(aState.PendingAttestations(), newState.Validators(), block.SlotNumber())
+	if err != nil {
+		return nil, err
 	}
 
 	newState.data.LastJustifiedSlot = justifiedSlot
 	newState.data.LastFinalizedSlot = finalizedSlot
 	newState.data.JustifiedStreak = justifiedStreak
 	newState.data.LastStateRecalculationSlot = newState.LastStateRecalculationSlot() + params.GetConfig().CycleLength
+
+	log.Infof("LastJustifiedSlot: %d", justifiedSlot)
+	log.Infof("LastFinalizedSlot: %d", finalizedSlot)
+	log.Infof("ValidatorSetChangeSlot: %d", newState.data.ValidatorSetChangeSlot)
 
 	// Process the pending special records gathered from last cycle.
 	newState.data.Validators, err = casper.ProcessSpecialRecords(block.SlotNumber(), newState.Validators(), aState.PendingSpecials())
@@ -316,39 +317,62 @@ func (c *CrystallizedState) NewStateRecalculations(aState *ActiveState, block *B
 	newState.data.LastFinalizedSlot = finalizedSlot
 
 	// Entering new validator set change transition.
-	if c.isValidatorSetChange(block.SlotNumber()) {
-		log.Info("Entering validator set change transition")
+	if newState.isValidatorSetChange(block.SlotNumber()) {
+		log.Infof("Entering validator set change transition: %#v", block.ParentHash())
 		newState.data.ValidatorSetChangeSlot = newState.LastStateRecalculationSlot()
+
 		newState.data.ShardAndCommitteesForSlots, err = newState.newValidatorSetRecalculations(block.ParentHash())
 		if err != nil {
 			return nil, err
 		}
+		log.Info("After")
+		printCommittee(newState.data.ShardAndCommitteesForSlots)
 
-		period := block.SlotNumber() / params.GetConfig().WithdrawalPeriod
+		newState.resetCrosslinks()
+
+		period := uint32(block.SlotNumber() / params.GetConfig().WithdrawalPeriod)
 		totalPenalties := newState.penalizedETH(period)
+
 		newState.data.Validators = casper.ChangeValidators(block.SlotNumber(), totalPenalties, newState.Validators())
 	}
 
 	return newState, nil
 }
 
+func (c *CrystallizedState) resetCrosslinks() {
+	for _, cl := range c.data.Crosslinks {
+		cl.RecentlyChanged = false
+	}
+}
+
+func printCommittee(shardAndCommittees []*pb.ShardAndCommitteeArray) {
+	for slot, shardCommittees := range shardAndCommittees {
+		for _, shardCommittee := range shardCommittees.ArrayShardAndCommittee {
+			log.Infof("%d %d %v", slot, shardCommittee.Shard, shardCommittee.Committee)
+		}
+	}
+}
+
+func (c *CrystallizedState) getNextShard() uint64 {
+	previousSlotIndex := 2 * params.GetConfig().CycleLength - 1
+	previousSlotShardAndCommittee := c.data.ShardAndCommitteesForSlots[previousSlotIndex].ArrayShardAndCommittee
+	lastShard := previousSlotShardAndCommittee[len(previousSlotShardAndCommittee)-1].Shard
+	return lastShard + 1 % params.GetConfig().ShardCount
+}
+
 // newValidatorSetRecalculations recomputes the validator set.
 func (c *CrystallizedState) newValidatorSetRecalculations(seed [32]byte) ([]*pb.ShardAndCommitteeArray, error) {
-	lastSlot := len(c.data.ShardAndCommitteesForSlots) - 1
-	lastCommitteeFromLastSlot := len(c.ShardAndCommitteesForSlots()[lastSlot].ArrayShardAndCommittee) - 1
-	crosslinkLastShard := c.ShardAndCommitteesForSlots()[lastSlot].ArrayShardAndCommittee[lastCommitteeFromLastSlot].Shard
-	crosslinkNextShard := (crosslinkLastShard + 1) % uint64(shardCount)
-
 	newShardCommitteeArray, err := casper.ShuffleValidatorsToCommittees(
 		seed,
 		c.data.Validators,
-		crosslinkNextShard,
+		c.getNextShard(),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return append(c.data.ShardAndCommitteesForSlots[:params.GetConfig().CycleLength], newShardCommitteeArray...), nil
+	committees := append(c.data.ShardAndCommitteesForSlots[params.GetConfig().CycleLength:], newShardCommitteeArray...)
+	return committees, nil
 }
 
 func copyCrosslinks(existing []*pb.CrosslinkRecord) []*pb.CrosslinkRecord {
@@ -371,9 +395,10 @@ func copyCrosslinks(existing []*pb.CrosslinkRecord) []*pb.CrosslinkRecord {
 // processCrosslinks checks if the proposed shard block has recevied
 // 2/3 of the votes. If yes, we update crosslink record to point to
 // the proposed shard block with latest beacon chain slot numbers.
-func (c *CrystallizedState) processCrosslinks(pendingAttestations []*pb.AggregatedAttestation, slot uint64,
+func (c *CrystallizedState) processCrosslinks(pendingAttestations []*pb.AggregatedAttestation,
 	validators []*pb.ValidatorRecord, currentSlot uint64) ([]*pb.CrosslinkRecord, error) {
-	crosslinkRecords := copyCrosslinks(c.data.Crosslinks)
+	crosslinkRecords := c.data.Crosslinks
+	slot := c.LastStateRecalculationSlot() + params.GetConfig().CycleLength
 
 	for _, attestation := range pendingAttestations {
 		indices, err := c.getAttesterIndices(attestation)
@@ -398,20 +423,30 @@ func (c *CrystallizedState) processCrosslinks(pendingAttestations []*pb.Aggregat
 	return crosslinkRecords, nil
 }
 
+func getPenaltyForPeriod(penalties []uint32, period uint32) uint64 {
+	numPeriods := uint32(len(penalties))
+	if numPeriods < period+1 {
+		return 0
+	}
+
+	return uint64(penalties[period])
+}
+
 // penalizedETH calculates penalized total ETH during the last 3 withdrawal periods.
-func (c *CrystallizedState) penalizedETH(periodIndex uint64) uint64 {
-	var penalties uint64
+func (c *CrystallizedState) penalizedETH(period uint32) uint64 {
+	var totalPenalty uint64
 
-	depositsPenalizedInPeriod := c.DepositsPenalizedInPeriod()
-	penalties += uint64(depositsPenalizedInPeriod[periodIndex])
+	penalties := c.DepositsPenalizedInPeriod()
 
-	if periodIndex >= 1 {
-		penalties += uint64(depositsPenalizedInPeriod[periodIndex-1])
+	totalPenalty += getPenaltyForPeriod(penalties, period)
+
+	if period >= 1 {
+		totalPenalty += getPenaltyForPeriod(penalties, period-1)
 	}
 
-	if periodIndex >= 2 {
-		penalties += uint64(depositsPenalizedInPeriod[periodIndex-2])
+	if period >= 2 {
+		totalPenalty += getPenaltyForPeriod(penalties, period-2)
 	}
 
-	return penalties
+	return totalPenalty
 }

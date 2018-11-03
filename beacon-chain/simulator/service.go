@@ -135,7 +135,6 @@ func (sim *Simulator) run(slotInterval <-chan uint64, requestChan <-chan p2p.Mes
 				log.Errorf("Failed to get crystallized state: %v", err)
 				continue
 			}
-
 			aStateHash, err := aState.Hash()
 			if err != nil {
 				log.Errorf("Failed to hash active state: %v", err)
@@ -155,6 +154,10 @@ func (sim *Simulator) run(slotInterval <-chan uint64, requestChan <-chan p2p.Mes
 				powChainRef = []byte{byte(slot)}
 			}
 
+			slotsStart := cState.LastStateRecalculationSlot() - params.GetConfig().CycleLength
+			slotIndex := (slot - 1 - slotsStart) % params.GetConfig().CycleLength
+			shardID := cState.ShardAndCommitteesForSlots()[slotIndex].ArrayShardAndCommittee[0].Shard
+
 			parentHash := make([]byte, 32)
 			copy(parentHash, lastHash[:])
 			block := types.NewBlock(&pb.BeaconBlock{
@@ -166,9 +169,13 @@ func (sim *Simulator) run(slotInterval <-chan uint64, requestChan <-chan p2p.Mes
 				AncestorHashes:        [][]byte{parentHash},
 				RandaoReveal:          params.GetConfig().SimulatedBlockRandao[:],
 				Attestations: []*pb.AggregatedAttestation{
-					{Slot: slot - 1, AttesterBitfield: []byte{byte(255)}},
+					{Slot: slot - 1, AttesterBitfield: []byte{byte(255)}, JustifiedBlockHash: parentHash, Shard: shardID},
 				},
 			})
+			shardID++
+			if shardID == uint64(params.GetConfig().ShardCount) {
+				shardID = 0
+			}
 
 			hash, err := block.Hash()
 			if err != nil {

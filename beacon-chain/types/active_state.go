@@ -147,13 +147,6 @@ func (a *ActiveState) GetBlockVoteCache() map[[32]byte]*utils.VoteCache {
 	return a.blockVoteCache
 }
 
-// appendNewAttestations appends new attestations from block in to active state.
-// this is called during block processing.
-func (a *ActiveState) appendNewAttestations(add []*pb.AggregatedAttestation) []*pb.AggregatedAttestation {
-	existing := a.data.PendingAttestations
-	return append(existing, add...)
-}
-
 // appendNewSpecialObject appends new special record object from block in to active state.
 // this is called during block processing.
 func (a *ActiveState) appendNewSpecialObject(record *pb.SpecialRecord) []*pb.SpecialRecord {
@@ -161,16 +154,17 @@ func (a *ActiveState) appendNewSpecialObject(record *pb.SpecialRecord) []*pb.Spe
 	return append(existing, record)
 }
 
-// cleanUpAttestations removes attestations older than last state recalc slot.
-func (a *ActiveState) cleanUpAttestations(lastStateRecalc uint64) []*pb.AggregatedAttestation {
+// updateAttestations removes attestations older than last state recalc slot.
+func (a *ActiveState) clearAttestations(lastStateRecalc uint64) {
 	existing := a.data.PendingAttestations
-	var update []*pb.AggregatedAttestation
-	for i := 0; i < len(existing); i++ {
-		if existing[i].GetSlot() >= lastStateRecalc {
-			update = append(update, existing[i])
+	update := make([]*pb.AggregatedAttestation, 0, len(existing))
+	for _, a := range existing {
+		if a.GetSlot() >= lastStateRecalc {
+			update = append(update, a)
 		}
 	}
-	return update
+
+	a.data.PendingAttestations = update
 }
 
 // calculateNewBlockHashes builds a new slice of recent block hashes with the
@@ -272,18 +266,13 @@ func (a *ActiveState) calculateNewVoteCache(block *Block, cState *CrystallizedSt
 	return update, nil
 }
 
-// CleanUpActiveState removes the old attestations going from a cycle length behind
-// from the last state recalc and then generates the new active state. This is run after
-// a crystallized state transition.
-func (a *ActiveState) CleanUpActiveState(lastStateRecalc uint64) *ActiveState {
-	slot := lastStateRecalc - params.GetConfig().CycleLength
-	newPendingAttestations := a.cleanUpAttestations(slot)
+// UpdateAttestations ...
+func (a *ActiveState) UpdateAttestations(attestations []*pb.AggregatedAttestation) *ActiveState {
+	newState := a.CopyState()
 
-	// Construct new active state after clean up pending attestations.
-	return NewActiveState(&pb.ActiveState{
-		PendingAttestations: newPendingAttestations,
-		RecentBlockHashes:   a.data.RecentBlockHashes,
-	}, a.blockVoteCache)
+	newState.data.PendingAttestations = append(newState.data.PendingAttestations, attestations...)
+
+	return newState
 }
 
 // CalculateNewActiveState returns the active state for `block` based on its own state.
@@ -291,16 +280,12 @@ func (a *ActiveState) CleanUpActiveState(lastStateRecalc uint64) *ActiveState {
 func (a *ActiveState) CalculateNewActiveState(
 	block *Block,
 	cState *CrystallizedState,
-	parentSlot uint64,
-	enableAttestationValidity bool) (*ActiveState, error) {
+	parentSlot uint64) (*ActiveState, error) {
 	var err error
 
 	newState := a.CopyState()
-	// Cleans up old attestations.
-	newState.CleanUpActiveState(cState.LastStateRecalculationSlot())
 
-	// Derive the new set of pending attestations.
-	newState.data.PendingAttestations = newState.appendNewAttestations(block.data.Attestations)
+	newState.clearAttestations(cState.LastStateRecalculationSlot())
 
 	// Derive the new set of recent block hashes.
 	newState.data.RecentBlockHashes, err = newState.calculateNewBlockHashes(block, parentSlot)
@@ -311,12 +296,9 @@ func (a *ActiveState) CalculateNewActiveState(
 	log.Debugf("Calculating new active state. Crystallized state lastStateRecalc is %d", cState.LastStateRecalculationSlot())
 
 	// With a valid beacon block, we can compute its attestations and store its votes/deposits in cache.
-
-	if enableAttestationValidity {
-		newState.blockVoteCache, err = newState.calculateNewVoteCache(block, cState)
-		if err != nil {
-			return nil, fmt.Errorf("failed to update vote cache: %v", err)
-		}
+	newState.blockVoteCache, err = newState.calculateNewVoteCache(block, cState)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update vote cache: %v", err)
 	}
 
 	_, proposerIndex, err := casper.ProposerShardAndIndex(
@@ -354,9 +336,8 @@ func (a *ActiveState) getSignedParentHashes(block *Block, attestation *pb.Aggreg
 	obliqueParentHashes := attestation.ObliqueParentHashes
 	earliestSlot := int(block.SlotNumber()) - len(recentBlockHashes)
 
-	startIdx := int(attestation.Slot) - earliestSlot - int(params.GetConfig().CycleLength) + 1
+	startIdx := int(attestation.Slot) - earliestSlot - int(params.GetConfig().CycleLength)
 	endIdx := startIdx - len(attestation.ObliqueParentHashes) + int(params.GetConfig().CycleLength)
-
 	if startIdx < 0 || endIdx > len(recentBlockHashes) || endIdx <= startIdx {
 		return nil, fmt.Errorf("attempt to fetch recent blockhashes from %d to %d invalid", startIdx, endIdx)
 	}

@@ -16,8 +16,7 @@ func TallyVoteBalances(
 	slot uint64,
 	blockVoteCache map[[32]byte]*utils.VoteCache,
 	validators []*pb.ValidatorRecord,
-	timeSinceFinality uint64,
-	enableRewardChecking bool) (uint64, []*pb.ValidatorRecord) {
+	timeSinceFinality uint64) (uint64, []*pb.ValidatorRecord) {
 
 	cache, ok := blockVoteCache[blockHash]
 
@@ -27,10 +26,8 @@ func TallyVoteBalances(
 
 	blockVoteBalance := cache.VoteTotalDeposit
 	voterIndices := cache.VoterIndices
-	if enableRewardChecking {
-		validators = CalculateRewards(slot, voterIndices, validators,
-			blockVoteBalance, timeSinceFinality)
-	}
+	validators = CalculateRewards(slot, voterIndices, validators,
+		blockVoteBalance, timeSinceFinality)
 
 	return blockVoteBalance, validators
 }
@@ -42,6 +39,8 @@ func FinalizeAndJustifySlots(
 	justifiedStreak uint64, blockVoteBalance uint64, totalDeposits uint64) (uint64, uint64, uint64) {
 
 	cycleLength := params.GetConfig().CycleLength
+
+	blockVoteBalance = totalDeposits
 
 	if 3*blockVoteBalance >= 2*totalDeposits {
 		if slot > justifiedSlot {
@@ -82,7 +81,6 @@ func ApplyCrosslinkRewardsAndPenalties(
 			if err != nil {
 				return err
 			}
-
 			if checkBit {
 				RewardValidatorCrosslink(totalBalance, voteBalance, rewardQuotient, validators[attesterIndex])
 			} else {
@@ -100,9 +98,9 @@ func ProcessBalancesInCrosslink(slot uint64, voteBalance uint64, totalBalance ui
 
 	// if 2/3 of committee voted on this crosslink, update the crosslink
 	// with latest dynasty number, shard block hash, and slot number.
-
 	voteMajority := 3*voteBalance >= 2*totalBalance
 	if voteMajority && !crosslinkRecords[attestation.Shard].RecentlyChanged {
+		log.Infof("{shard, slot}: %d %d", attestation.Shard, slot)
 		crosslinkRecords[attestation.Shard] = &pb.CrosslinkRecord{
 			RecentlyChanged: true,
 			ShardBlockHash:  attestation.ShardBlockHash,
